@@ -19,6 +19,31 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 
 ---
 
+## Screenshots
+
+**Node library and empty canvas**
+![Node library and empty canvas](screenshots/01-canvas-empty.png)
+
+**Loan Eligibility workflow** — Input → Validator → Rule Engine → AI Analysis → Decision → Formatter → Output, with conditional branching
+![Loan Eligibility workflow](screenshots/02-loan-eligibility-workflow.png)
+
+**Rule Engine properties panel** — AND/OR conditions with 18 operators, no LLM
+![Rule Engine properties](screenshots/03-rule-engine-properties.png)
+
+**Fraud Detection workflow** — dual AI nodes feeding a Decision node with approve/reject routing
+![Fraud Detection workflow](screenshots/07-fraud-detection-workflow.png)
+
+**AI Agent properties panel** — task type, output format, temperature slider, custom prompt
+![AI Agent properties](screenshots/05-ai-node-properties.png)
+
+**Validator node properties** — field-level schema rules with type, required, min/max, enum
+![Validator properties](screenshots/08-validator-properties.png)
+
+**Execute modal** — input fields collected per-node before running, with file upload support
+![Execute modal](screenshots/06-execute-modal.png)
+
+---
+
 ## Key Features
 
 - **14 built-in node types** covering AI, HTTP, rules, code, validation, routing, formatting, and aggregation
