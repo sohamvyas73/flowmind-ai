@@ -287,6 +287,78 @@ Then: `docker compose restart backend`. No code changes needed.
 
 ---
 
+## Roadmap
+
+The current release covers the core canvas, 14 node types, and the execution engine. Below are the planned improvement phases, ordered by priority.
+
+---
+
+### Phase 2 — RAG & Memory
+
+The most impactful missing capability: nodes that can retrieve context from a knowledge base before making an LLM call, and nodes that remember state across workflow runs.
+
+| Node | Description |
+|---|---|
+| **RAG Retriever** | Connect to a vector database (Pinecone, Weaviate, ChromaDB, pgvector). Embed a query from the previous node's output, retrieve top-K relevant chunks, inject them into the next AI node's context automatically. |
+| **Document Embedder** | Chunk a document (PDF, TXT, HTML) into segments, generate embeddings via Gemini or OpenAI, and upsert into a configured vector store. Use before a RAG Retriever to build the knowledge base. |
+| **Memory Node** | Read/write key-value state that persists across workflow executions. Lets AI nodes access conversation history, user profiles, or running totals from previous runs — not just the current execution. |
+| **Semantic Search** | Given a query, return the N most semantically similar items from a stored collection, ranked by cosine similarity. No full vector DB required — works against a JSON field in PostgreSQL using pgvector. |
+
+**Why RAG matters here:** Right now every AI node only sees the current execution context. With a RAG Retriever node between an Input and an AI Agent, you can answer questions against a company knowledge base, a product catalog, or a compliance document library — all without fine-tuning.
+
+---
+
+### Phase 3 — Multi-Model & Streaming
+
+| Improvement | Description |
+|---|---|
+| **Multi-model support** | Add OpenAI GPT-4o, Anthropic Claude, Mistral, and Ollama (local models) as selectable providers per AI node. Each node picks its own model — use a cheap fast model for classification, a powerful one for reasoning. |
+| **Streaming output** | Stream LLM tokens to the browser in real time via Server-Sent Events. Long AI nodes currently block until complete — streaming makes execution feel instant and lets users see the model thinking. |
+| **Agent loop node** | A node that runs an LLM in a ReAct loop — the model can call tools (other nodes), observe results, and decide to continue or stop. Enables true autonomous agents, not just linear pipelines. |
+| **Model fallback** | Configure a primary and fallback model per AI node. If the primary times out or rate-limits, the fallback fires automatically. |
+
+---
+
+### Phase 4 — Triggers & Integrations
+
+Right now the only trigger is a manual HTTP POST. This phase makes workflows event-driven.
+
+| Feature | Description |
+|---|---|
+| **Scheduled triggers** | Cron-based execution — run a workflow every hour, daily, or on a custom schedule. Useful for batch report generation, periodic data enrichment, and digest emails. |
+| **Webhook triggers** | Register a workflow as a listener for external events — Stripe payments, GitHub push events, Slack messages, form submissions. No polling needed. |
+| **Email trigger** | Inbound email parsing — forward emails to a workflow-specific address and the content (sender, subject, body, attachments) becomes the Input node's payload. |
+| **Native integrations** | First-class send nodes for Slack (post message), SendGrid (send email), Twilio (send SMS), and Notion (create/update page) — beyond the current generic webhook Output node. |
+| **Database node** | Execute a SQL SELECT or INSERT directly as a node. Connects to any PostgreSQL or MySQL database. Replaces the pattern of using an HTTP node to call a database-backed API. |
+
+---
+
+### Phase 5 — Production & Scale
+
+| Feature | Description |
+|---|---|
+| **Async execution queue** | Move workflow execution off the FastAPI request thread into a Redis/Celery queue. Long-running workflows (multiple LLM calls, slow external APIs) no longer block the HTTP response. Poll or webhook for completion. |
+| **Parallel node execution** | Execute independent branches simultaneously instead of sequentially. A workflow with three HTTP nodes feeding the same aggregator currently runs them one at a time — parallelism would cut latency by 3x. |
+| **Retry & backoff** | Configure per-node retry count and backoff strategy. An LLM node that fails due to a rate limit retries automatically with exponential backoff before marking the execution as failed. |
+| **Secrets manager** | Encrypted credential storage in the database instead of plaintext `.env` values. API keys, bearer tokens, and database passwords are stored encrypted and injected at runtime — never exposed in logs or the UI. |
+| **Execution timeout** | Per-workflow maximum execution time. Workflows that run longer than the configured limit are cancelled and marked as failed — prevents runaway LLM loops from consuming quota indefinitely. |
+| **Rate limiting** | Per-workflow and per-API-key request limits. Prevents a single workflow trigger flood from consuming the entire Gemini quota. |
+
+---
+
+### Phase 6 — Collaboration & Ecosystem
+
+| Feature | Description |
+|---|---|
+| **Multi-tenant auth** | User accounts, organisations, and role-based access. Workflows belong to an organisation, not just a single user. Members can view, edit, or execute based on their role. |
+| **Workflow versioning** | Every Save creates a version snapshot. Roll back to any previous version, diff two versions, and promote a version to "active" while keeping the draft in progress. |
+| **Testing mode** | Dry-run a workflow with mock LLM responses — a configurable stub returns a fixed response for every AI node. Lets you test routing logic and validate node configurations without spending API quota. |
+| **Workflow marketplace** | Import and export workflows as JSON. A community gallery of pre-built workflows (KYC, invoice processing, support routing, RAG Q&A, etc.) that can be loaded with one click and customised. |
+| **Execution analytics** | Per-workflow dashboard: success rate, average latency, LLM token usage, cost estimate per execution, and error breakdown by node type. |
+| **Sub-workflow node** | Call another saved workflow as a node inside the current one. Enables composing complex pipelines from smaller reusable pieces — the workflow equivalent of a function call. |
+
+---
+
 ## Contributing
 
 Contributions are welcome. The codebase is intentionally kept straightforward.
