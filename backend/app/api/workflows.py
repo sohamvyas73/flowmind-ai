@@ -1,22 +1,41 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.models.workflow import Workflow, WorkflowExecution, ExecutionStatus
-from app.models.user import User, CreditUsage
+from app.models.user import User, CreditUsage, PlatformSetting
 from app.schemas.workflow import (
     WorkflowCreate, WorkflowUpdate, WorkflowResponse,
     ExecutionCreate, ExecutionResponse, TriggerResponse
 )
 from app.services.workflow_executor import WorkflowExecutor
+from app.core.config import settings
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 workflow_executor = WorkflowExecutor()
+
+def _resolve_api_keys(user: User, db: Session) -> Dict[str, Any]:
+    """Build resolved API key dict: user keys > platform defaults > env."""
+    platform = db.query(PlatformSetting).filter(PlatformSetting.id == 1).first()
+
+    def pick(user_val, platform_attr, env_attr, default=None):
+        return user_val or (getattr(platform, platform_attr, None) if platform else None) \
+               or getattr(settings, env_attr, None) or default
+
+    return {
+        "gemini_api_key": pick(user.gemini_api_key, "gemini_api_key", "GEMINI_API_KEY"),
+        "gemini_model":   pick(user.gemini_model,   "gemini_model",   "GEMINI_MODEL", "gemini-1.5-pro"),
+        "openai_api_key": pick(user.openai_api_key, "openai_api_key", "OPENAI_API_KEY"),
+        "openai_model":   pick(user.openai_model,   "openai_model",   "OPENAI_MODEL", "gpt-4o"),
+        "anthropic_api_key": pick(user.anthropic_api_key, "anthropic_api_key", "ANTHROPIC_API_KEY"),
+        "anthropic_model":   pick(user.anthropic_model,   "anthropic_model",   "ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+    }
+
 
 CREDIT_COSTS: Dict[str, int] = {
     "inputNode": 0,
@@ -184,6 +203,9 @@ async def execute_workflow(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if not current_user.is_active:
+        raise HTTPException(status_code=403, detail="Account not yet activated. Please contact your admin.")
+
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -201,10 +223,11 @@ async def execute_workflow(
     db.commit()
     db.refresh(execution)
 
+    resolved_keys = _resolve_api_keys(current_user, db)
     trace = None
     try:
         result = await workflow_executor.execute_workflow(
-            workflow.graph_data, execution_data.input_data,
+            workflow.graph_data, execution_data.input_data, resolved_keys=resolved_keys,
         )
         trace = result.get("execution_trace")
         if result.get("status") == "failed":
@@ -245,6 +268,9 @@ async def trigger_workflow(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if not current_user.is_active:
+        raise HTTPException(status_code=403, detail="Account not yet activated. Please contact your admin.")
+
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -267,9 +293,10 @@ async def trigger_workflow(
     db.commit()
     db.refresh(execution)
 
+    resolved_keys = _resolve_api_keys(current_user, db)
     trace = None
     try:
-        result = await workflow_executor.execute_workflow(workflow.graph_data, input_data)
+        result = await workflow_executor.execute_workflow(workflow.graph_data, input_data, resolved_keys=resolved_keys)
         trace = result.get("execution_trace")
         if result.get("status") == "failed":
             execution.status = ExecutionStatus.FAILED

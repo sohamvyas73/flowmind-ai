@@ -2,14 +2,43 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.auth import get_admin_user, generate_api_token, hash_password
-from app.models.user import User, CreditUsage, UserRole
+from app.models.user import User, CreditUsage, UserRole, PlatformSetting
 from app.models.workflow import Workflow, WorkflowExecution, ExecutionStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class PlatformSettingUpdate(BaseModel):
+    openai_api_key: Optional[str] = None
+    openai_model: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    gemini_model: Optional[str] = None
+    clear_openai_api_key: bool = False
+    clear_anthropic_api_key: bool = False
+    clear_gemini_api_key: bool = False
+
+
+def _mask(key: Optional[str]) -> Optional[str]:
+    if not key:
+        return None
+    return key[:6] + "…" + key[-4:] if len(key) > 12 else "****"
+
+
+def _get_or_create_platform(db: Session) -> PlatformSetting:
+    setting = db.query(PlatformSetting).filter(PlatformSetting.id == 1).first()
+    if not setting:
+        setting = PlatformSetting(id=1)
+        db.add(setting)
+        db.commit()
+        db.refresh(setting)
+    return setting
 
 
 @router.get("/stats")
@@ -207,6 +236,81 @@ async def get_connector_usage(
             "credits_used": row.total_credits,
         })
     return result
+
+
+@router.get("/platform-settings")
+async def get_platform_settings(
+    db: Session = Depends(get_db),
+    _=Depends(get_admin_user),
+):
+    s = _get_or_create_platform(db)
+    return {
+        "openai": {
+            "api_key_set": bool(s.openai_api_key),
+            "api_key_masked": _mask(s.openai_api_key),
+            "model": s.openai_model or "gpt-4o",
+        },
+        "anthropic": {
+            "api_key_set": bool(s.anthropic_api_key),
+            "api_key_masked": _mask(s.anthropic_api_key),
+            "model": s.anthropic_model or "claude-sonnet-4-6",
+        },
+        "gemini": {
+            "api_key_set": bool(s.gemini_api_key),
+            "api_key_masked": _mask(s.gemini_api_key),
+            "model": s.gemini_model or "gemini-1.5-pro",
+        },
+    }
+
+
+@router.put("/platform-settings")
+async def update_platform_settings(
+    data: PlatformSettingUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_admin_user),
+):
+    s = _get_or_create_platform(db)
+
+    if data.clear_openai_api_key:
+        s.openai_api_key = None
+    elif data.openai_api_key is not None:
+        s.openai_api_key = data.openai_api_key or None
+    if data.openai_model is not None:
+        s.openai_model = data.openai_model or "gpt-4o"
+
+    if data.clear_anthropic_api_key:
+        s.anthropic_api_key = None
+    elif data.anthropic_api_key is not None:
+        s.anthropic_api_key = data.anthropic_api_key or None
+    if data.anthropic_model is not None:
+        s.anthropic_model = data.anthropic_model or "claude-sonnet-4-6"
+
+    if data.clear_gemini_api_key:
+        s.gemini_api_key = None
+    elif data.gemini_api_key is not None:
+        s.gemini_api_key = data.gemini_api_key or None
+    if data.gemini_model is not None:
+        s.gemini_model = data.gemini_model or "gemini-1.5-pro"
+
+    db.commit()
+    db.refresh(s)
+    return {
+        "openai": {
+            "api_key_set": bool(s.openai_api_key),
+            "api_key_masked": _mask(s.openai_api_key),
+            "model": s.openai_model,
+        },
+        "anthropic": {
+            "api_key_set": bool(s.anthropic_api_key),
+            "api_key_masked": _mask(s.anthropic_api_key),
+            "model": s.anthropic_model,
+        },
+        "gemini": {
+            "api_key_set": bool(s.gemini_api_key),
+            "api_key_masked": _mask(s.gemini_api_key),
+            "model": s.gemini_model,
+        },
+    }
 
 
 @router.get("/workflows")

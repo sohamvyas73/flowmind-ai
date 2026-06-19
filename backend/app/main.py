@@ -7,6 +7,7 @@ from app.core.database import Base, engine, SessionLocal
 from app.api import workflows
 from app.api import auth as auth_router
 from app.api import admin as admin_router
+from app.api import config as config_router
 
 # Register all models with Base before create_all
 from app.models import workflow as _wf_models  # noqa: F401
@@ -19,21 +20,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create all tables
+# Create all tables (new tables; existing ones untouched)
 Base.metadata.create_all(bind=engine)
 
-# Idempotent schema migration: add user_id to existing workflows table
-try:
-    with engine.connect() as conn:
-        conn.execute(text(
-            "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS "
-            "user_id UUID REFERENCES users(id) ON DELETE SET NULL;"
-        ))
-        conn.commit()
-except Exception as e:
-    logger.warning("Schema migration skipped (table may not exist yet): %s", e)
+# Idempotent migrations for columns added after initial release
+_MIGRATIONS = [
+    "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_api_key VARCHAR(255);",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_model VARCHAR(100);",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS anthropic_api_key VARCHAR(255);",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS anthropic_model VARCHAR(100);",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255);",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS gemini_model VARCHAR(100);",
+]
 
-# Seed admin user from environment variables
+for _sql in _MIGRATIONS:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(_sql))
+            conn.commit()
+    except Exception as e:
+        logger.warning("Migration skipped: %s | %s", _sql[:60], e)
+
+
 def _seed_admin():
     from app.models.user import User, UserRole
     from app.core.auth import hash_password, generate_api_token
@@ -53,9 +62,16 @@ def _seed_admin():
                 role=UserRole.ADMIN,
                 api_token=generate_api_token(),
                 credits_total=999_999,
+                is_active=True,
             ))
             db.commit()
             logger.info("Admin user created: %s", admin_email)
+        else:
+            # Ensure existing admin is active
+            admin = db.query(User).filter(User.email == admin_email).first()
+            if admin and not admin.is_active:
+                admin.is_active = True
+                db.commit()
     finally:
         db.close()
 
@@ -75,9 +91,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router.router,  prefix=f"{settings.API_V1_STR}/auth",     tags=["auth"])
-app.include_router(admin_router.router, prefix=f"{settings.API_V1_STR}/admin",    tags=["admin"])
-app.include_router(workflows.router,    prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"])
+app.include_router(auth_router.router,   prefix=f"{settings.API_V1_STR}/auth",      tags=["auth"])
+app.include_router(admin_router.router,  prefix=f"{settings.API_V1_STR}/admin",     tags=["admin"])
+app.include_router(config_router.router, prefix=f"{settings.API_V1_STR}/config",    tags=["config"])
+app.include_router(workflows.router,     prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"])
 
 
 @app.get("/")

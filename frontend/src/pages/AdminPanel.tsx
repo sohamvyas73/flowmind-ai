@@ -3,11 +3,12 @@ import {
   Users, BarChart3, Zap, Globe, Workflow, ArrowLeft,
   Brain, RefreshCw, Shield, CheckCircle, XCircle,
   TrendingUp, Activity, CreditCard, ScanLine, ChevronDown, ChevronRight,
+  Settings, Eye, EyeOff, Save, Cpu, UserCheck, Clock,
 } from 'lucide-react';
-import { adminApi, AdminUser, CreditBreakdown, ConnectorUsage, AdminWorkflow } from '@/services/api';
+import { adminApi, AdminUser, CreditBreakdown, ConnectorUsage, AdminWorkflow, PlatformSettings } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 
-type Section = 'overview' | 'users' | 'credits' | 'connectors' | 'workflows';
+type Section = 'overview' | 'users' | 'credits' | 'connectors' | 'workflows' | 'platform';
 
 const NODE_LABELS: Record<string, string> = {
   aiNode: 'AI Agent', verificationNode: 'Verification', decisionNode: 'Decision',
@@ -140,7 +141,7 @@ function UsersSection() {
 
   useEffect(() => { adminApi.getUsers().then(setUsers); }, []);
 
-  const save = async (userId: string) => {
+  const saveCredits = async (userId: string) => {
     setSaving(userId);
     try {
       await adminApi.updateUser(userId, { credits_total: editing[userId] });
@@ -156,104 +157,134 @@ function UsersSection() {
     setUsers(u => u.map(x => x.id === user.id ? { ...x, is_active: !user.is_active } : x));
   };
 
+  const pending = users.filter(u => !u.is_active && u.role !== 'admin');
+  const active = users.filter(u => u.is_active || u.role === 'admin');
+
+  const UserRow = ({ user }: { user: AdminUser }) => (
+    <tr key={user.id} className="hover:bg-gray-50/50 transition-colors">
+      <td className="px-4 py-3">
+        <p className="font-medium text-gray-900">{user.full_name || '—'}</p>
+        <p className="text-xs text-gray-400 font-mono">{user.email}</p>
+      </td>
+      <td className="px-4 py-3">
+        <Badge
+          label={user.role}
+          color={user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}
+        />
+      </td>
+      <td className="px-4 py-3 text-gray-700 font-medium">{user.workflow_count}</td>
+      <td className="px-4 py-3 text-gray-700 font-medium">{user.execution_count}</td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-700 font-medium">{user.credits_used}</span>
+          <span className="text-gray-400">/</span>
+          {editing[user.id] !== undefined ? (
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                value={editing[user.id]}
+                onChange={e => setEditing(ed => ({ ...ed, [user.id]: parseInt(e.target.value) || 0 }))}
+                className="w-20 px-2 py-0.5 text-xs border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                onClick={() => saveCredits(user.id)}
+                disabled={saving === user.id}
+                className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {saving === user.id ? '…' : 'Save'}
+              </button>
+              <button
+                onClick={() => setEditing(e => { const n = { ...e }; delete n[user.id]; return n; })}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >✕</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditing(e => ({ ...e, [user.id]: user.credits_total }))}
+              className="text-gray-700 font-medium hover:text-blue-600 underline decoration-dotted cursor-pointer"
+              title="Click to edit"
+            >
+              {user.credits_total.toLocaleString()}
+            </button>
+          )}
+        </div>
+        <div className="mt-1 w-32 bg-gray-100 rounded-full h-1.5">
+          <div
+            className={`h-1.5 rounded-full ${user.credits_used / user.credits_total > 0.9 ? 'bg-red-500' : user.credits_used / user.credits_total > 0.7 ? 'bg-amber-500' : 'bg-green-500'}`}
+            style={{ width: `${Math.min(100, (user.credits_used / Math.max(user.credits_total, 1)) * 100)}%` }}
+          />
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        <Badge
+          label={user.is_active ? 'Active' : 'Pending'}
+          color={user.is_active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}
+        />
+      </td>
+      <td className="px-4 py-3 text-xs text-gray-400">
+        {user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}
+      </td>
+      <td className="px-4 py-3">
+        <button
+          onClick={() => toggleActive(user)}
+          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
+            user.is_active
+              ? 'bg-red-50 text-red-600 hover:bg-red-100'
+              : 'bg-green-600 text-white hover:bg-green-700'
+          }`}
+        >
+          {user.is_active ? 'Deactivate' : 'Approve'}
+        </button>
+      </td>
+    </tr>
+  );
+
+  const TABLE_HEADERS = ['User', 'Role', 'Workflows', 'Executions', 'Credits Used / Total', 'Status', 'Joined', 'Action'];
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <p className="font-semibold text-gray-800">All Users ({users.length})</p>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
-            <tr>
-              {['User', 'Role', 'Workflows', 'Executions', 'Credits Used / Total', 'Status', 'Joined', 'Actions'].map(h => (
-                <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {users.map(user => (
-              <tr key={user.id} className="hover:bg-gray-50/50 transition-colors">
-                <td className="px-4 py-3">
-                  <p className="font-medium text-gray-900">{user.full_name || '—'}</p>
-                  <p className="text-xs text-gray-400 font-mono">{user.email}</p>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge
-                    label={user.role}
-                    color={user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}
-                  />
-                </td>
-                <td className="px-4 py-3 text-gray-700 font-medium">{user.workflow_count}</td>
-                <td className="px-4 py-3 text-gray-700 font-medium">{user.execution_count}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-700 font-medium">{user.credits_used}</span>
-                    <span className="text-gray-400">/</span>
-                    {editing[user.id] !== undefined ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          value={editing[user.id]}
-                          onChange={e => setEditing(ed => ({ ...ed, [user.id]: parseInt(e.target.value) || 0 }))}
-                          className="w-20 px-2 py-0.5 text-xs border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                        <button
-                          onClick={() => save(user.id)}
-                          disabled={saving === user.id}
-                          className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          {saving === user.id ? '…' : 'Save'}
-                        </button>
-                        <button
-                          onClick={() => setEditing(e => { const n = { ...e }; delete n[user.id]; return n; })}
-                          className="text-xs text-gray-400 hover:text-gray-600"
-                        >✕</button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setEditing(e => ({ ...e, [user.id]: user.credits_total }))}
-                        className="text-gray-700 font-medium hover:text-blue-600 underline decoration-dotted cursor-pointer"
-                        title="Click to edit"
-                      >
-                        {user.credits_total.toLocaleString()}
-                      </button>
-                    )}
-                  </div>
-                  <div className="mt-1 w-32 bg-gray-100 rounded-full h-1.5">
-                    <div
-                      className={`h-1.5 rounded-full ${user.credits_used / user.credits_total > 0.9 ? 'bg-red-500' : user.credits_used / user.credits_total > 0.7 ? 'bg-amber-500' : 'bg-green-500'}`}
-                      style={{ width: `${Math.min(100, (user.credits_used / Math.max(user.credits_total, 1)) * 100)}%` }}
-                    />
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge
-                    label={user.is_active ? 'Active' : 'Disabled'}
-                    color={user.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}
-                  />
-                </td>
-                <td className="px-4 py-3 text-xs text-gray-400">
-                  {user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}
-                </td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => toggleActive(user)}
-                    className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                      user.is_active
-                        ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                        : 'bg-green-50 text-green-600 hover:bg-green-100'
-                    }`}
-                  >
-                    {user.is_active ? 'Disable' : 'Enable'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {users.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">No users yet.</td></tr>
-            )}
-          </tbody>
-        </table>
+    <div className="space-y-6">
+      {/* Pending approval */}
+      {pending.length > 0 && (
+        <div className="bg-white rounded-xl border-2 border-amber-300 overflow-hidden">
+          <div className="px-5 py-4 border-b border-amber-100 bg-amber-50 flex items-center gap-3">
+            <Clock className="w-4 h-4 text-amber-600" />
+            <div>
+              <p className="font-semibold text-amber-800">Pending Approval ({pending.length})</p>
+              <p className="text-xs text-amber-600">These users signed up and are waiting for your approval to use the platform.</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-amber-50/50 text-xs text-amber-700 uppercase tracking-wide">
+                <tr>{TABLE_HEADERS.map(h => <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>)}</tr>
+              </thead>
+              <tbody className="divide-y divide-amber-50">
+                {pending.map(u => <UserRow key={u.id} user={u} />)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Active / all users */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+          <UserCheck className="w-4 h-4 text-green-600" />
+          <p className="font-semibold text-gray-800">Active Users ({active.length})</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+              <tr>{TABLE_HEADERS.map(h => <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {active.map(u => <UserRow key={u.id} user={u} />)}
+              {active.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">No active users yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -435,6 +466,159 @@ function WorkflowsSection() {
   );
 }
 
+// ── Platform Settings ─────────────────────────────────────────────────────────
+
+const OPENAI_MODELS   = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1-mini'];
+const ANTHROPIC_MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'];
+const GEMINI_MODELS   = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'];
+
+interface ProviderDraft { apiKey: string; model: string; showKey: boolean; }
+const EMPTY: ProviderDraft = { apiKey: '', model: '', showKey: false };
+
+function PlatformSettingsSection() {
+  const [settings, setSettings] = useState<PlatformSettings | null>(null);
+  const [openai,    setOpenai]    = useState<ProviderDraft>(EMPTY);
+  const [anthropic, setAnthropic] = useState<ProviderDraft>(EMPTY);
+  const [gemini,    setGemini]    = useState<ProviderDraft>(EMPTY);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminApi.getPlatformSettings().then(s => {
+      setSettings(s);
+      setOpenai(d => ({ ...d, model: s.openai.model }));
+      setAnthropic(d => ({ ...d, model: s.anthropic.model }));
+      setGemini(d => ({ ...d, model: s.gemini.model }));
+    });
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const payload: Record<string, unknown> = {};
+      if (openai.apiKey) payload.openai_api_key = openai.apiKey;
+      if (openai.model) payload.openai_model = openai.model;
+      if (anthropic.apiKey) payload.anthropic_api_key = anthropic.apiKey;
+      if (anthropic.model) payload.anthropic_model = anthropic.model;
+      if (gemini.apiKey) payload.gemini_api_key = gemini.apiKey;
+      if (gemini.model) payload.gemini_model = gemini.model;
+      const updated = await adminApi.updatePlatformSettings(payload as any);
+      setSettings(updated);
+      setOpenai(d => ({ ...d, apiKey: '' }));
+      setAnthropic(d => ({ ...d, apiKey: '' }));
+      setGemini(d => ({ ...d, apiKey: '' }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!settings) return <Spinner />;
+
+  const ProvCard = ({
+    label, icon, models, cfg, draft, onChange, isActive,
+  }: {
+    label: string; icon: string; models: string[];
+    cfg: PlatformSettings['openai']; draft: ProviderDraft;
+    onChange: (fn: (d: ProviderDraft) => ProviderDraft) => void;
+    isActive?: boolean;
+  }) => (
+    <div className={`bg-white rounded-xl border ${isActive ? 'border-blue-300' : 'border-gray-200'} p-5 space-y-4`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">{icon}</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">{label}</h3>
+              {isActive && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Zap className="w-3 h-3" />Active</span>}
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          {cfg.api_key_set
+            ? <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5" />{cfg.api_key_masked}</span>
+            : <span className="text-xs text-gray-400">No key set</span>}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">API Key (platform default)</label>
+        <div className="relative">
+          <input
+            type={draft.showKey ? 'text' : 'password'}
+            placeholder={cfg.api_key_set ? 'Enter new key to replace…' : 'Set platform default key…'}
+            value={draft.apiKey}
+            onChange={e => onChange(d => ({ ...d, apiKey: e.target.value }))}
+            className="w-full px-3 py-2 pr-10 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 font-mono"
+          />
+          <button
+            onClick={() => onChange(d => ({ ...d, showKey: !d.showKey }))}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            {draft.showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">
+          <Cpu className="inline w-3 h-3 mr-1" />Default Model
+        </label>
+        <select
+          value={draft.model}
+          onChange={e => onChange(d => ({ ...d, model: e.target.value }))}
+          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+        >
+          {models.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex gap-3">
+        <Shield className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-purple-800">Platform-wide model defaults</p>
+          <p className="text-sm text-purple-700 mt-0.5">
+            These keys and models are used when users haven't configured their own.
+            Users can override per-provider in their Settings page.
+            AI nodes currently use the Gemini engine.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5">
+        <ProvCard label="OpenAI" icon="🟢" models={OPENAI_MODELS} cfg={settings.openai}
+          draft={openai} onChange={setOpenai} />
+        <ProvCard label="Anthropic" icon="🟠" models={ANTHROPIC_MODELS} cfg={settings.anthropic}
+          draft={anthropic} onChange={setAnthropic} />
+        <ProvCard label="Google Gemini" icon="🔵" models={GEMINI_MODELS} cfg={settings.gemini}
+          draft={gemini} onChange={setGemini} isActive />
+      </div>
+
+      <div className="flex items-center justify-between">
+        {saved && (
+          <span className="text-sm text-green-600 flex items-center gap-1.5">
+            <CheckCircle className="w-4 h-4" /> Platform settings saved!
+          </span>
+        )}
+        <button
+          onClick={save}
+          disabled={saving}
+          className="ml-auto flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? 'Saving…' : 'Save Platform Settings'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
@@ -446,11 +630,12 @@ function Spinner() {
 // ── Main Admin Panel ──────────────────────────────────────────────────────────
 
 const NAV: { id: Section; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: 'overview',   label: 'Overview',      icon: BarChart3 },
-  { id: 'users',      label: 'Users',          icon: Users },
-  { id: 'credits',    label: 'Credit Usage',   icon: CreditCard },
-  { id: 'connectors', label: 'Connectors',     icon: Globe },
-  { id: 'workflows',  label: 'Workflows',      icon: Workflow },
+  { id: 'overview',   label: 'Overview',          icon: BarChart3 },
+  { id: 'users',      label: 'Users',              icon: Users },
+  { id: 'credits',    label: 'Credit Usage',       icon: CreditCard },
+  { id: 'connectors', label: 'Connectors',         icon: Globe },
+  { id: 'workflows',  label: 'Workflows',          icon: Workflow },
+  { id: 'platform',   label: 'Platform Settings',  icon: Settings },
 ];
 
 export function AdminPanel() {
@@ -521,6 +706,7 @@ export function AdminPanel() {
           {section === 'credits'    && <CreditsSection />}
           {section === 'connectors' && <ConnectorsSection />}
           {section === 'workflows'  && <WorkflowsSection />}
+          {section === 'platform'   && <PlatformSettingsSection />}
         </div>
       </main>
     </div>

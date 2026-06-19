@@ -102,16 +102,17 @@ class NodeExecutor:
         if not settings.GEMINI_API_KEY:
             logger.warning("GEMINI_API_KEY not set — AI nodes will return errors")
 
-    def _get_llm(self, temperature: float = 0.0) -> Optional[ChatGoogleGenerativeAI]:
-        """Create an LLM instance from current settings on every call.
-        This means changing GEMINI_MODEL or GEMINI_API_KEY in .env and
-        running `docker compose restart backend` is all that's needed."""
-        if not settings.GEMINI_API_KEY:
+    def _get_llm(self, temperature: float = 0.0, context: Optional[Dict[str, Any]] = None) -> Optional[ChatGoogleGenerativeAI]:
+        """Create an LLM instance. Resolved keys from context take priority over settings."""
+        keys = (context or {}).get("_resolved_keys", {})
+        api_key = keys.get("gemini_api_key") or settings.GEMINI_API_KEY
+        model = keys.get("gemini_model") or settings.GEMINI_MODEL
+        if not api_key:
             return None
-        logger.info("LLM ready: model=%s temperature=%.2f", settings.GEMINI_MODEL, temperature)
+        logger.info("LLM ready: model=%s temperature=%.2f", model, temperature)
         return ChatGoogleGenerativeAI(
-            google_api_key=settings.GEMINI_API_KEY,
-            model=settings.GEMINI_MODEL,
+            google_api_key=api_key,
+            model=model,
             temperature=temperature,
             convert_system_message_to_human=True,
         )
@@ -186,7 +187,7 @@ class NodeExecutor:
         temperature = float(node_data.get("temperature", 0.7))
         output_format = node_data.get("outputFormat", "text")
         output_schema = node_data.get("outputSchema", "")
-        llm = self._get_llm(temperature=temperature)
+        llm = self._get_llm(temperature=temperature, context=context)
 
         if not llm:
             logger.error("[ai_node] node=%s | error=LLM not configured", node_id)
@@ -260,7 +261,7 @@ class NodeExecutor:
 
     async def execute_verification_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         node_id = context.get("current_node_id", "")
-        llm = self._get_llm()
+        llm = self._get_llm(context=context)
 
         if not llm:
             logger.error("[verification_node] node=%s | error=LLM not configured", node_id)
@@ -317,7 +318,7 @@ class NodeExecutor:
         threshold = node_data.get("threshold", 0.8)
         custom_prompt = node_data.get("prompt", "")
         previous_output = context.get("previous_output", {})
-        llm = self._get_llm()
+        llm = self._get_llm(context=context)
 
         if not llm:
             logger.error("[decision_node] node=%s | error=LLM not configured", node_id)
@@ -1261,6 +1262,7 @@ class WorkflowExecutor:
         self,
         graph_data: Dict[str, Any],
         input_data: Optional[Dict[str, Any]] = None,
+        resolved_keys: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         nodes: List[Dict] = graph_data.get("nodes", [])
         edges: List[Dict] = graph_data.get("edges", [])
@@ -1281,7 +1283,11 @@ class WorkflowExecutor:
         )
 
         execution_trace: List[Dict] = []
-        context: Dict[str, Any] = {"input": input_data, "previous_output": input_data or {}}
+        context: Dict[str, Any] = {
+            "input": input_data,
+            "previous_output": input_data or {},
+            "_resolved_keys": resolved_keys or {},
+        }
         workflow_start = time.time()
         executed: set = set()
 

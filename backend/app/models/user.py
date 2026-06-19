@@ -22,7 +22,17 @@ class User(Base):
     api_token = Column(String(64), unique=True, nullable=False, index=True)
     credits_total = Column(Integer, default=1000, nullable=False)
     credits_used = Column(Integer, default=0, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
+    # New users start inactive; admin must approve
+    is_active = Column(Boolean, default=False, nullable=False)
+
+    # Per-user model config (overrides platform defaults when set)
+    openai_api_key = Column(String(255), nullable=True)
+    openai_model = Column(String(100), nullable=True)
+    anthropic_api_key = Column(String(255), nullable=True)
+    anthropic_model = Column(String(100), nullable=True)
+    gemini_api_key = Column(String(255), nullable=True)
+    gemini_model = Column(String(100), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -38,3 +48,17 @@ class CreditUsage(Base):
     credits = Column(Integer, nullable=False, default=0)
     description = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PlatformSetting(Base):
+    """Single-row table holding admin-configured platform-wide defaults."""
+    __tablename__ = "platform_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    openai_api_key = Column(String(255), nullable=True)
+    openai_model = Column(String(100), default="gpt-4o")
+    anthropic_api_key = Column(String(255), nullable=True)
+    anthropic_model = Column(String(100), default="claude-sonnet-4-6")
+    gemini_api_key = Column(String(255), nullable=True)
+    gemini_model = Column(String(100), default="gemini-1.5-pro")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

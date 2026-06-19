@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins } from 'lucide-react';
+import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2 } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { workflowApi } from '@/services/api';
 import { Workflow } from '@/types/workflow';
@@ -221,6 +221,16 @@ export function Toolbar() {
             </div>
           </div>
         )}
+
+        {/* Settings button */}
+        <button
+          onClick={() => setView('config')}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          title="Model & API Settings"
+        >
+          <Settings2 className="w-4 h-4" />
+          Settings
+        </button>
 
         {/* Admin panel button (admin only) */}
         {user?.role === 'admin' && (

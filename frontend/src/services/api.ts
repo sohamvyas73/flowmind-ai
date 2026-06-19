@@ -123,6 +123,59 @@ export const workflowApi = {
   },
 };
 
+// ── User Config ───────────────────────────────────────────────────────────────
+
+export interface ProviderConfig {
+  api_key_set: boolean;
+  api_key_masked: string | null;
+  model: string | null;
+  effective_key_masked: string | null;
+  effective_model: string;
+  source: 'user' | 'platform' | 'env';
+}
+
+export interface UserConfig {
+  openai: ProviderConfig;
+  anthropic: ProviderConfig;
+  gemini: ProviderConfig;
+}
+
+export interface ConfigUpdatePayload {
+  openai_api_key?: string;
+  openai_model?: string;
+  anthropic_api_key?: string;
+  anthropic_model?: string;
+  gemini_api_key?: string;
+  gemini_model?: string;
+  clear_openai_api_key?: boolean;
+  clear_anthropic_api_key?: boolean;
+  clear_gemini_api_key?: boolean;
+}
+
+export interface PlatformProviderConfig {
+  api_key_set: boolean;
+  api_key_masked: string | null;
+  model: string;
+}
+
+export interface PlatformSettings {
+  openai: PlatformProviderConfig;
+  anthropic: PlatformProviderConfig;
+  gemini: PlatformProviderConfig;
+}
+
+export const configApi = {
+  getMyConfig: async (): Promise<UserConfig> => {
+    const res = await api.get('/config/me');
+    return res.data;
+  },
+
+  updateMyConfig: async (data: ConfigUpdatePayload): Promise<UserConfig> => {
+    const res = await api.put('/config/me', data);
+    return res.data;
+  },
+};
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export const adminApi = {
@@ -159,6 +212,21 @@ export const adminApi = {
   getWorkflows: async () => {
     const res = await api.get('/admin/workflows');
     return res.data as AdminWorkflow[];
+  },
+
+  getPlatformSettings: async (): Promise<PlatformSettings> => {
+    const res = await api.get('/admin/platform-settings');
+    return res.data;
+  },
+
+  updatePlatformSettings: async (data: Partial<{
+    openai_api_key: string; openai_model: string;
+    anthropic_api_key: string; anthropic_model: string;
+    gemini_api_key: string; gemini_model: string;
+    clear_openai_api_key: boolean; clear_anthropic_api_key: boolean; clear_gemini_api_key: boolean;
+  }>): Promise<PlatformSettings> => {
+    const res = await api.put('/admin/platform-settings', data);
+    return res.data;
   },
 };
 
