@@ -20,8 +20,9 @@ class ExecutionStatus(str, enum.Enum):
 
 class Workflow(Base):
     __tablename__ = "workflows"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     graph_data = Column(JSON, nullable=False)
@@ -32,7 +33,7 @@ class Workflow(Base):
 
 class WorkflowExecution(Base):
     __tablename__ = "workflow_executions"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workflow_id = Column(UUID(as_uuid=True), nullable=False)
     status = Column(SQLEnum(ExecutionStatus), default=ExecutionStatus.PENDING)

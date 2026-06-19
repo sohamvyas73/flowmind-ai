@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from typing import Any, Dict, List
 from uuid import UUID
 from app.core.database import get_db
+from app.core.auth import get_current_user
 from app.models.workflow import Workflow, WorkflowExecution, ExecutionStatus
+from app.models.user import User, CreditUsage
 from app.schemas.workflow import (
     WorkflowCreate, WorkflowUpdate, WorkflowResponse,
     ExecutionCreate, ExecutionResponse, TriggerResponse
@@ -16,41 +18,130 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 workflow_executor = WorkflowExecutor()
 
+CREDIT_COSTS: Dict[str, int] = {
+    "inputNode": 0,
+    "outputNode": 0,
+    "transformNode": 1,
+    "formatterNode": 1,
+    "aggregatorNode": 1,
+    "ruleNode": 1,
+    "switchNode": 1,
+    "validatorNode": 1,
+    "humanReviewNode": 1,
+    "codeNode": 2,
+    "httpNode": 2,
+    "aiNode": 10,
+    "verificationNode": 10,
+    "decisionNode": 10,
+    "indianKycNode": 15,
+}
+
+
+def _charge_credits(
+    db: Session,
+    user_id: Any,
+    workflow_id: Any,
+    execution_id: Any,
+    execution_trace: List[Dict],
+) -> int:
+    if not execution_trace:
+        return 0
+    total = 0
+    for step in execution_trace:
+        node_type = step.get("node_type", "")
+        cost = CREDIT_COSTS.get(node_type, 1)
+        if cost == 0:
+            continue
+        result = step.get("result") or {}
+        if node_type == "indianKycNode":
+            desc = f"Indian KYC · {result.get('document_type', '')} · {result.get('provider', '')}"
+        elif node_type == "httpNode":
+            desc = f"HTTP {result.get('method', 'GET')} · {(result.get('url') or '')[:60]}"
+        elif node_type == "aiNode":
+            desc = f"AI · {result.get('task', 'inference')}"
+        elif node_type == "verificationNode":
+            desc = f"Verification · {result.get('verification_type', '')}"
+        elif node_type == "decisionNode":
+            desc = f"Decision · {result.get('decision', '')}"
+        else:
+            desc = node_type
+
+        db.add(CreditUsage(
+            user_id=user_id,
+            workflow_id=workflow_id,
+            execution_id=execution_id,
+            node_type=node_type,
+            credits=cost,
+            description=desc,
+        ))
+        total += cost
+
+    if total > 0:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.credits_used = (user.credits_used or 0) + total
+
+    return total
+
+
 @router.post("/workflows", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
-async def create_workflow(workflow: WorkflowCreate, db: Session = Depends(get_db)):
-    """Create a new workflow"""
+async def create_workflow(
+    workflow: WorkflowCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     db_workflow = Workflow(
+        user_id=current_user.id,
         name=workflow.name,
         description=workflow.description,
-        graph_data=workflow.graph_data.dict()
+        graph_data=workflow.graph_data.dict(),
     )
     db.add(db_workflow)
     db.commit()
     db.refresh(db_workflow)
     return db_workflow
 
+
 @router.get("/workflows", response_model=List[WorkflowResponse])
-async def list_workflows(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """List all workflows"""
-    workflows = db.query(Workflow).offset(skip).limit(limit).all()
-    return workflows
+async def list_workflows(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(Workflow)
+    if current_user.role != "admin":
+        q = q.filter(Workflow.user_id == current_user.id)
+    return q.order_by(Workflow.updated_at.desc()).offset(skip).limit(limit).all()
+
 
 @router.get("/workflows/{workflow_id}", response_model=WorkflowResponse)
-async def get_workflow(workflow_id: UUID, db: Session = Depends(get_db)):
-    """Get a specific workflow"""
+async def get_workflow(
+    workflow_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if current_user.role != "admin" and str(workflow.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Access denied")
     return workflow
 
+
 @router.put("/workflows/{workflow_id}", response_model=WorkflowResponse)
-async def update_workflow(workflow_id: UUID, workflow_update: WorkflowUpdate, db: Session = Depends(get_db)):
-    """Update a workflow"""
+async def update_workflow(
+    workflow_id: UUID,
+    workflow_update: WorkflowUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     db_workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not db_workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if current_user.role != "admin" and str(db_workflow.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    # model_dump() in Pydantic v2 already serializes nested models to plain dicts
     update_data = workflow_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_workflow, field, value)
@@ -61,29 +152,45 @@ async def update_workflow(workflow_id: UUID, workflow_update: WorkflowUpdate, db
     logger.info("Workflow updated | workflow_id=%s name=%r", workflow_id, db_workflow.name)
     return db_workflow
 
+
 @router.delete("/workflows/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_workflow(workflow_id: UUID, db: Session = Depends(get_db)):
-    """Delete a workflow and all its executions"""
+async def delete_workflow(
+    workflow_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if current_user.role != "admin" and str(workflow.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     deleted_executions = db.query(WorkflowExecution).filter(
         WorkflowExecution.workflow_id == workflow_id
     ).delete()
     db.delete(workflow)
     db.commit()
-    logger.info("Workflow deleted | workflow_id=%s | executions_removed=%d", workflow_id, deleted_executions)
+    logger.info(
+        "Workflow deleted | workflow_id=%s | executions_removed=%d",
+        workflow_id, deleted_executions,
+    )
     return None
 
+
 @router.post("/workflows/{workflow_id}/execute", response_model=ExecutionResponse)
-async def execute_workflow(workflow_id: UUID, execution_data: ExecutionCreate, db: Session = Depends(get_db)):
-    """Execute a workflow"""
+async def execute_workflow(
+    workflow_id: UUID,
+    execution_data: ExecutionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if current_user.role != "admin" and str(workflow.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    logger.info("EXECUTE request | workflow_id=%s name=%r", workflow_id, workflow.name)
+    logger.info("EXECUTE | workflow_id=%s user=%s", workflow_id, current_user.email)
 
     execution = WorkflowExecution(
         workflow_id=workflow_id,
@@ -93,64 +200,63 @@ async def execute_workflow(workflow_id: UUID, execution_data: ExecutionCreate, d
     db.add(execution)
     db.commit()
     db.refresh(execution)
-    logger.info("Execution record created | execution_id=%s", execution.id)
 
+    trace = None
     try:
         result = await workflow_executor.execute_workflow(
-            workflow.graph_data,
-            execution_data.input_data,
+            workflow.graph_data, execution_data.input_data,
         )
+        trace = result.get("execution_trace")
         if result.get("status") == "failed":
             execution.status = ExecutionStatus.FAILED
             execution.error_message = (
                 f"Node '{result.get('failed_node_label', result.get('failed_node_id'))}' "
                 f"failed: {result.get('error')}"
             )
-            execution.execution_trace = result.get("execution_trace")
-            execution.completed_at = datetime.utcnow()
-            logger.error("Execution FAILED (node error) | execution_id=%s | %s", execution.id, execution.error_message)
         elif result.get("status") == "paused":
             execution.status = ExecutionStatus.COMPLETED
             execution.output_data = result.get("review_data")
-            execution.execution_trace = result.get("execution_trace")
-            execution.completed_at = datetime.utcnow()
-            logger.info(
-                "Execution PAUSED (human review) | execution_id=%s | paused_at_node=%s",
-                execution.id, result.get("paused_node_label"),
-            )
         else:
             execution.status = ExecutionStatus.COMPLETED
             execution.output_data = result.get("final_output")
-            execution.execution_trace = result.get("execution_trace")
-            execution.completed_at = datetime.utcnow()
-            logger.info("Execution COMPLETED | execution_id=%s", execution.id)
-
+        execution.execution_trace = trace
+        execution.completed_at = datetime.utcnow()
     except Exception as e:
         execution.status = ExecutionStatus.FAILED
         execution.error_message = str(e)
         execution.completed_at = datetime.utcnow()
-        logger.error("Execution FAILED (exception) | execution_id=%s | error=%s", execution.id, e, exc_info=True)
+        logger.error("Execution FAILED | execution_id=%s | %s", execution.id, e, exc_info=True)
 
     db.commit()
+
+    credits = _charge_credits(db, current_user.id, workflow_id, execution.id, trace or [])
+    db.commit()
+    if credits:
+        logger.info("Credits charged | user=%s credits=%d", current_user.email, credits)
+
     db.refresh(execution)
     return execution
 
+
 @router.post("/workflows/{workflow_id}/trigger", response_model=TriggerResponse)
-async def trigger_workflow(workflow_id: UUID, request: Request, db: Session = Depends(get_db)):
-    """Trigger a workflow via live API — accepts any JSON body as input"""
+async def trigger_workflow(
+    workflow_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if current_user.role != "admin" and str(workflow.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Access denied — use your own API token")
 
     try:
         input_data: Dict[str, Any] = await request.json()
     except Exception:
         input_data = {}
 
-    # Log body keys but never log file contents (base64 floods logs)
-    safe_keys = {k: ("<file>" if isinstance(v, str) and v.startswith("data:") else v)
-                 for k, v in input_data.items() if not isinstance(v, dict)}
-    logger.info("TRIGGER request | workflow_id=%s name=%r | body_keys=%s", workflow_id, workflow.name, safe_keys)
+    logger.info("TRIGGER | workflow_id=%s user=%s", workflow_id, current_user.email)
 
     execution = WorkflowExecution(
         workflow_id=workflow_id,
@@ -160,40 +266,37 @@ async def trigger_workflow(workflow_id: UUID, request: Request, db: Session = De
     db.add(execution)
     db.commit()
     db.refresh(execution)
-    logger.info("Execution record created | execution_id=%s", execution.id)
 
+    trace = None
     try:
         result = await workflow_executor.execute_workflow(workflow.graph_data, input_data)
+        trace = result.get("execution_trace")
         if result.get("status") == "failed":
             execution.status = ExecutionStatus.FAILED
             execution.error_message = (
                 f"Node '{result.get('failed_node_label', result.get('failed_node_id'))}' "
                 f"failed: {result.get('error')}"
             )
-            execution.execution_trace = result.get("execution_trace")
-            execution.completed_at = datetime.utcnow()
-            logger.error("Trigger FAILED (node error) | execution_id=%s | %s", execution.id, execution.error_message)
         elif result.get("status") == "paused":
             execution.status = ExecutionStatus.COMPLETED
             execution.output_data = result.get("review_data")
-            execution.execution_trace = result.get("execution_trace")
-            execution.completed_at = datetime.utcnow()
-            logger.info("Trigger PAUSED (human review) | execution_id=%s", execution.id)
         else:
             execution.status = ExecutionStatus.COMPLETED
             execution.output_data = result.get("final_output")
-            execution.execution_trace = result.get("execution_trace")
-            execution.completed_at = datetime.utcnow()
-            logger.info("Trigger COMPLETED | execution_id=%s", execution.id)
+        execution.execution_trace = trace
+        execution.completed_at = datetime.utcnow()
     except Exception as e:
         execution.status = ExecutionStatus.FAILED
         execution.error_message = str(e)
         execution.completed_at = datetime.utcnow()
-        logger.error("Trigger FAILED (exception) | execution_id=%s | error=%s", execution.id, e, exc_info=True)
+        logger.error("Trigger FAILED | execution_id=%s | %s", execution.id, e, exc_info=True)
 
     db.commit()
-    db.refresh(execution)
 
+    credits = _charge_credits(db, current_user.id, workflow_id, execution.id, trace or [])
+    db.commit()
+
+    db.refresh(execution)
     return TriggerResponse(
         workflow_id=workflow_id,
         execution_id=execution.id,
@@ -201,18 +304,43 @@ async def trigger_workflow(workflow_id: UUID, request: Request, db: Session = De
         output=execution.output_data,
     )
 
+
 @router.get("/executions/{execution_id}", response_model=ExecutionResponse)
-async def get_execution(execution_id: UUID, db: Session = Depends(get_db)):
-    """Get execution details"""
+async def get_execution(
+    execution_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     execution = db.query(WorkflowExecution).filter(WorkflowExecution.id == execution_id).first()
     if not execution:
         raise HTTPException(status_code=404, detail="Execution not found")
+
+    # Verify ownership via parent workflow
+    if current_user.role != "admin":
+        workflow = db.query(Workflow).filter(Workflow.id == execution.workflow_id).first()
+        if not workflow or str(workflow.user_id) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Access denied")
+
     return execution
 
+
 @router.get("/workflows/{workflow_id}/executions", response_model=List[ExecutionResponse])
-async def list_workflow_executions(workflow_id: UUID, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """List executions for a workflow"""
-    executions = db.query(WorkflowExecution).filter(
-        WorkflowExecution.workflow_id == workflow_id
-    ).offset(skip).limit(limit).all()
-    return executions
+async def list_workflow_executions(
+    workflow_id: UUID,
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if current_user.role != "admin" and str(workflow.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return (
+        db.query(WorkflowExecution)
+        .filter(WorkflowExecution.workflow_id == workflow_id)
+        .order_by(WorkflowExecution.started_at.desc())
+        .offset(skip).limit(limit).all()
+    )

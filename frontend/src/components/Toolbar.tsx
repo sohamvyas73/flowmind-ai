@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen } from 'lucide-react';
+import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { workflowApi } from '@/services/api';
 import { Workflow } from '@/types/workflow';
 import { ExecutionModal } from './ExecutionModal';
 import { LoadWorkflowModal } from './LoadWorkflowModal';
+import { useAuthStore } from '@/store/authStore';
 
 export function Toolbar() {
   const {
@@ -21,6 +22,10 @@ export function Toolbar() {
     loadWorkflow,
     clearWorkflow,
   } = useWorkflowStore();
+
+  const { user, logout, setView } = useAuthStore();
+  const creditsRemaining = user ? user.credits_total - user.credits_used : 0;
+  const creditPct = user ? Math.max(0, Math.min(100, (creditsRemaining / user.credits_total) * 100)) : 0;
 
   const [saving, setSaving] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -200,6 +205,48 @@ export function Toolbar() {
         <div className="text-xs text-gray-400 ml-1">
           {nodes.length} nodes · {edges.length} edges
         </div>
+
+        <div className="flex-1" />
+
+        {/* Credits badge */}
+        {user && (
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-200 rounded-md" title={`${creditsRemaining} of ${user.credits_total} credits remaining`}>
+            <Coins className="w-3.5 h-3.5 text-yellow-500" />
+            <span className="text-xs font-medium text-gray-700">{creditsRemaining.toLocaleString()}</span>
+            <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${creditPct > 30 ? 'bg-green-500' : creditPct > 10 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                style={{ width: `${creditPct}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Admin panel button (admin only) */}
+        {user?.role === 'admin' && (
+          <button
+            onClick={() => setView('admin')}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
+            title="Admin Panel"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Admin
+          </button>
+        )}
+
+        {/* User email + logout */}
+        {user && (
+          <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
+            <span className="text-xs text-gray-500 max-w-[120px] truncate">{user.email}</span>
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {showExecuteModal && (
