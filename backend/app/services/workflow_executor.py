@@ -1036,6 +1036,219 @@ class NodeExecutor:
             "timestamp":    datetime.utcnow().isoformat(),
         }
 
+    # ── Indian KYC node ────────────────────────────────────────────────────────
+
+    _SUREPASS_ENDPOINTS: Dict[str, str] = {
+        "pan":              "https://kyc-api.surepass.io/api/v1/pan/pan",
+        "aadhaar":          "https://kyc-api.surepass.io/api/v1/aadhaar-v2/generate-otp",
+        "voter_id":         "https://kyc-api.surepass.io/api/v1/voter-id/voter-id",
+        "driving_license":  "https://kyc-api.surepass.io/api/v1/driving-license/driving-license",
+        "passport":         "https://kyc-api.surepass.io/api/v1/passport/file-number",
+    }
+
+    _IDFY_ENDPOINTS: Dict[str, str] = {
+        "pan":              "https://eve.idfy.com/v3/tasks/sync/verify_with_source/ind_pan",
+        "aadhaar":          "https://eve.idfy.com/v3/tasks/sync/verify_with_source/ind_aadhaar",
+        "voter_id":         "https://eve.idfy.com/v3/tasks/sync/verify_with_source/ind_voter_id",
+        "driving_license":  "https://eve.idfy.com/v3/tasks/sync/verify_with_source/ind_driving_license",
+        "passport":         "https://eve.idfy.com/v3/tasks/sync/verify_with_source/ind_passport",
+    }
+
+    _SANDBOX_ENDPOINTS: Dict[str, str] = {
+        "pan":              "https://api.sandbox.co.in/kyc/pan/verify",
+        "aadhaar":          "https://api.sandbox.co.in/kyc/aadhaar/otp",
+        "voter_id":         "https://api.sandbox.co.in/kyc/voter-id/verify",
+        "driving_license":  "https://api.sandbox.co.in/kyc/driving-license/verify",
+        "passport":         "https://api.sandbox.co.in/kyc/passport/verify",
+    }
+
+    _KARZA_ENDPOINTS: Dict[str, str] = {
+        "pan":              "https://api.karza.in/v3/pan/verify",
+        "aadhaar":          "https://api.karza.in/v3/aadhaar/generate-otp",
+        "voter_id":         "https://api.karza.in/v3/voter-id/verify",
+        "driving_license":  "https://api.karza.in/v3/dl/verify",
+        "passport":         "https://api.karza.in/v3/passport/verify",
+    }
+
+    def _build_kyc_request(
+        self,
+        provider: str,
+        doc_type: str,
+        doc_number: str,
+        api_key: str,
+        custom_endpoint: str,
+    ) -> tuple:
+        """Return (url, headers, body) for the given provider and document type."""
+        if provider == "surepass":
+            url = self._SUREPASS_ENDPOINTS.get(doc_type, "")
+            headers = {"Authorization": f"Token {api_key}", "Content-Type": "application/json"}
+            body = {"id_number": doc_number}
+            return url, headers, body
+
+        if provider == "idfy":
+            import uuid
+            url = self._IDFY_ENDPOINTS.get(doc_type, "")
+            headers = {
+                "account-id": api_key.split(":")[0] if ":" in api_key else api_key,
+                "api-key": api_key.split(":")[1] if ":" in api_key else api_key,
+                "Content-Type": "application/json",
+            }
+            body = {
+                "task_id": str(uuid.uuid4()),
+                "group_id": str(uuid.uuid4()),
+                "data": {"id_number": doc_number},
+            }
+            return url, headers, body
+
+        if provider == "sandbox":
+            url = self._SANDBOX_ENDPOINTS.get(doc_type, "")
+            headers = {
+                "Authorization": api_key,
+                "x-api-key": api_key,
+                "x-api-version": "1.0",
+                "Content-Type": "application/json",
+            }
+            body = {"pan": doc_number} if doc_type == "pan" else {"id_number": doc_number}
+            return url, headers, body
+
+        if provider == "karza":
+            url = self._KARZA_ENDPOINTS.get(doc_type, "")
+            headers = {"x-karza-key": api_key, "Content-Type": "application/json"}
+            body = {"id_number": doc_number}
+            return url, headers, body
+
+        # custom provider
+        return custom_endpoint, {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, {"id_number": doc_number}
+
+    @staticmethod
+    def _normalize_kyc_response(provider: str, doc_type: str, raw: Any, status_code: int) -> Dict[str, Any]:
+        """Extract common fields from provider-specific responses into a standard shape."""
+        kyc_data: Dict[str, Any] = {}
+        verified = False
+
+        if provider == "surepass":
+            success = raw.get("success", False)
+            verified = success and status_code in (200, 101)
+            data = raw.get("data", {})
+            kyc_data = {
+                "name": data.get("full_name") or data.get("name", ""),
+                "dob": data.get("dob", ""),
+                "gender": data.get("gender", ""),
+                "address": data.get("address") or data.get("address_data", {}),
+                "father_name": data.get("father_name", ""),
+                "category": data.get("category", ""),
+                "status": data.get("status", ""),
+            }
+
+        elif provider == "idfy":
+            result = raw.get("result", {})
+            details = result.get("details", {})
+            verified = result.get("status", "") in ("id_found", "verified") and status_code == 200
+            kyc_data = {
+                "name": details.get("name", ""),
+                "dob": details.get("dob", ""),
+                "gender": details.get("gender", ""),
+                "address": details.get("address", {}),
+                "status": result.get("status", ""),
+            }
+
+        elif provider == "sandbox":
+            data = raw.get("data", raw)
+            verified = raw.get("code", 0) == 200 or status_code == 200
+            kyc_data = {
+                "name": data.get("name", "") or data.get("full_name", ""),
+                "dob": data.get("dob", "") or data.get("date_of_birth", ""),
+                "gender": data.get("gender", ""),
+                "address": data.get("address", ""),
+            }
+
+        elif provider == "karza":
+            result = raw.get("result", [{}])
+            details = result[0] if isinstance(result, list) and result else {}
+            verified = raw.get("statusCode", 0) == 101 and status_code == 200
+            kyc_data = {
+                "name": details.get("name", ""),
+                "dob": details.get("dob", ""),
+                "father_name": details.get("fatherName", ""),
+                "address": details.get("address", ""),
+            }
+
+        else:
+            # custom / unknown: pass raw through
+            verified = status_code == 200
+            kyc_data = raw if isinstance(raw, dict) else {}
+
+        # Strip None/empty to keep output clean
+        kyc_data = {k: v for k, v in kyc_data.items() if v not in (None, "", {})}
+
+        return {
+            "verified": verified,
+            "document_type": doc_type,
+            "provider": provider,
+            "kyc_data": kyc_data,
+            "raw_response": raw,
+            "status_code": status_code,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    async def execute_indian_kyc_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        node_id      = context.get("current_node_id", "")
+        doc_type     = node_data.get("documentType", "pan")
+        provider     = node_data.get("provider", "surepass")
+        api_key      = node_data.get("apiKey", "")
+        doc_field    = node_data.get("documentField", "document_number")
+        custom_ep    = node_data.get("customEndpoint", "")
+
+        previous_output = context.get("previous_output", {})
+        flat = self._flatten_previous(previous_output)
+
+        # Extract document number using dot notation path
+        doc_number: Any = flat
+        for part in doc_field.split('.'):
+            doc_number = doc_number.get(part) if isinstance(doc_number, dict) else None
+
+        if not doc_number:
+            return {"error": f"Indian KYC node: document number not found at field '{doc_field}' in previous output"}
+
+        doc_number = str(doc_number).strip()
+        logger.info(
+            "[indian_kyc_node] node=%s | doc_type=%s provider=%s field=%s number=%s",
+            node_id, doc_type, provider, doc_field, doc_number[:4] + "****",
+        )
+
+        if not api_key and provider != "custom":
+            return {"error": f"Indian KYC node: apiKey is required for provider '{provider}'"}
+
+        url, headers, body = self._build_kyc_request(provider, doc_type, doc_number, api_key, custom_ep)
+
+        if not url:
+            return {"error": f"Indian KYC node: no endpoint configured for provider='{provider}' docType='{doc_type}'"}
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(url, json=body, headers=headers)
+
+            logger.info(
+                "[indian_kyc_node] node=%s | status=%d size=%d",
+                node_id, response.status_code, len(response.content),
+            )
+
+            try:
+                raw = response.json()
+            except Exception:
+                raw = {"raw_text": response.text}
+
+            result = self._normalize_kyc_response(provider, doc_type, raw, response.status_code)
+            logger.info(
+                "[indian_kyc_node] node=%s | verified=%s kyc_keys=%s",
+                node_id, result["verified"], list(result["kyc_data"].keys()),
+            )
+            return result
+
+        except Exception as e:
+            logger.error("[indian_kyc_node] node=%s | request failed: %s", node_id, e, exc_info=True)
+            return {"error": f"Indian KYC request failed: {e}"}
+
 
 # ── Workflow orchestrator ──────────────────────────────────────────────────────
 
@@ -1199,6 +1412,7 @@ class WorkflowExecutor:
             "switchNode":       self.node_executor.execute_switch_node,
             "formatterNode":    self.node_executor.execute_formatter_node,
             "aggregatorNode":   self.node_executor.execute_aggregator_node,
+            "indianKycNode":    self.node_executor.execute_indian_kyc_node,
         }
         executor = executor_map.get(node_type)
         if not executor:

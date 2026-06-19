@@ -106,6 +106,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       data.valueField = '';
       data.groupBy = '';
       data.separator = ', ';
+    } else if (type === 'indianKycNode') {
+      data.documentType = 'pan';
+      data.provider = 'surepass';
+      data.apiKey = '';
+      data.documentField = 'document_number';
+      data.customEndpoint = '';
     }
     const newNode: Node = { id: getId(), type, position, data };
     set({ nodes: [...get().nodes, newNode] });
@@ -175,6 +181,7 @@ function getNodeLabel(type: string): string {
     switchNode: 'Switch Router',
     formatterNode: 'Formatter',
     aggregatorNode: 'Aggregator',
+    indianKycNode: 'Indian KYC',
   };
   return labels[type] || 'Node';
 }

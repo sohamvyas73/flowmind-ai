@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps } from 'reactflow';
 import {
   Database, Brain, CheckCircle, GitBranch, Send,
   Globe, Shuffle, UserCheck,
-  Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator,
+  Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine,
 } from 'lucide-react';
 
 const nodeStyles = 'px-4 py-3 shadow-lg rounded-lg border-2 bg-white min-w-[160px]';
@@ -233,6 +233,29 @@ export const AggregatorNode = memo(({ data, selected }: NodeProps) => (
   </div>
 ));
 
+export const IndianKycNode = memo(({ data, selected }: NodeProps) => {
+  const docLabels: Record<string, string> = {
+    pan: 'PAN Card', aadhaar: 'Aadhaar', voter_id: 'Voter ID',
+    driving_license: 'Driving License', passport: 'Passport',
+  };
+  return (
+    <div className={`${nodeStyles} ${selected ? 'border-fuchsia-500' : 'border-gray-300'}`}>
+      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-fuchsia-500" />
+      <div className="flex items-center gap-2">
+        <ScanLine className="w-5 h-5 text-fuchsia-600" />
+        <div className="font-semibold text-sm">{data.label}</div>
+      </div>
+      {data.documentType && (
+        <div className="text-xs text-gray-600 mt-1 bg-fuchsia-50 px-2 py-1 rounded flex items-center justify-between">
+          <span>{docLabels[data.documentType as string] || data.documentType}</span>
+          {data.provider && <span className="ml-1 text-fuchsia-500 capitalize">{data.provider}</span>}
+        </div>
+      )}
+      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-fuchsia-500" />
+    </div>
+  );
+});
+
 // Display names
 InputNode.displayName       = 'InputNode';
 AINode.displayName          = 'AINode';
@@ -248,3 +271,4 @@ ValidatorNode.displayName   = 'ValidatorNode';
 SwitchNode.displayName      = 'SwitchNode';
 FormatterNode.displayName   = 'FormatterNode';
 AggregatorNode.displayName  = 'AggregatorNode';
+IndianKycNode.displayName   = 'IndianKycNode';

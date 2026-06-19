@@ -1,7 +1,8 @@
 export type NodeType =
   | 'inputNode' | 'aiNode' | 'verificationNode' | 'decisionNode' | 'outputNode'
   | 'httpNode' | 'transformNode' | 'humanReviewNode'
-  | 'ruleNode' | 'codeNode' | 'validatorNode' | 'switchNode' | 'formatterNode' | 'aggregatorNode';
+  | 'ruleNode' | 'codeNode' | 'validatorNode' | 'switchNode' | 'formatterNode' | 'aggregatorNode'
+  | 'indianKycNode';
 
 export interface InputField {
   id: string;

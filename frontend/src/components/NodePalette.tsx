@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator } from 'lucide-react';
+import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { healthCheck } from '@/services/api';
@@ -141,6 +141,15 @@ const nodeTypeList: NodeTypeConfig[] = [
     border: 'border-sky-200',
     bg: 'bg-sky-50',
     text: 'text-sky-700',
+  },
+  {
+    type: 'indianKycNode',
+    label: 'Indian KYC',
+    description: 'Verify Aadhaar, PAN & more',
+    icon: ({ className }) => <ScanLine className={className} />,
+    border: 'border-fuchsia-200',
+    bg: 'bg-fuchsia-50',
+    text: 'text-fuchsia-700',
   },
 ];
 

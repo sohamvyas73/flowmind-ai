@@ -13,6 +13,7 @@ import {
   InputNode, AINode, VerificationNode, DecisionNode, OutputNode,
   HttpNode, TransformNode, HumanReviewNode,
   RuleNode, CodeNode, ValidatorNode, SwitchNode, FormatterNode, AggregatorNode,
+  IndianKycNode,
 } from './CustomNodes';
 import { NodePalette } from './NodePalette';
 import { NodePropertiesPanel } from './NodePropertiesPanel';
@@ -34,6 +35,7 @@ const nodeTypes = {
   switchNode: SwitchNode,
   formatterNode: FormatterNode,
   aggregatorNode: AggregatorNode,
+  indianKycNode: IndianKycNode,
 };
 
 export function WorkflowCanvas() {
@@ -121,6 +123,7 @@ export function WorkflowCanvas() {
               switchNode: '#7c3aed',
               formatterNode: '#65a30d',
               aggregatorNode: '#0ea5e9',
+              indianKycNode: '#c026d3',
             };
             return colors[node.type || 'default'] || '#94a3b8';
           }}

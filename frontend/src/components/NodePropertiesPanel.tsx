@@ -74,6 +74,7 @@ export function NodePropertiesPanel() {
     ruleNode: 'focus:ring-amber-500', codeNode: 'focus:ring-zinc-500',
     validatorNode: 'focus:ring-emerald-500', switchNode: 'focus:ring-violet-500',
     formatterNode: 'focus:ring-lime-600', aggregatorNode: 'focus:ring-sky-500',
+    indianKycNode: 'focus:ring-fuchsia-500',
   };
   const ring = ringMap[selectedNode.type || ''] || 'focus:ring-blue-500';
   const fi = inp(ring);
@@ -694,6 +695,55 @@ export function NodePropertiesPanel() {
                   placeholder=", " className={fi} />
               </Field>
             )}
+          </>
+        )}
+
+        {/* ═══════════════════ INDIAN KYC NODE ═══════════════════ */}
+        {t === 'indianKycNode' && (
+          <>
+            <Field label="Document Type">
+              <Select value={(data.documentType as string) || 'pan'} onChange={v => up('documentType', v)} ring={ring}>
+                <option value="pan">PAN Card</option>
+                <option value="aadhaar">Aadhaar Card</option>
+                <option value="voter_id">Voter ID (EPIC)</option>
+                <option value="driving_license">Driving License</option>
+                <option value="passport">Passport</option>
+              </Select>
+            </Field>
+            <Field label="KYC Provider">
+              <Select value={(data.provider as string) || 'surepass'} onChange={v => up('provider', v)} ring={ring}>
+                <option value="surepass">Surepass</option>
+                <option value="idfy">IDfy</option>
+                <option value="sandbox">Sandbox.co.in</option>
+                <option value="karza">Karza</option>
+                <option value="custom">Custom Endpoint</option>
+              </Select>
+            </Field>
+            {data.provider === 'custom' && (
+              <Field label="Custom API Endpoint">
+                <input type="text" value={(data.customEndpoint as string) || ''}
+                  onChange={e => up('customEndpoint', e.target.value)}
+                  placeholder="https://api.example.com/kyc/verify" className={`${fi} font-mono`} />
+              </Field>
+            )}
+            <Field label="API Key">
+              <input type="password" value={(data.apiKey as string) || ''}
+                onChange={e => up('apiKey', e.target.value)}
+                placeholder="••••••••" className={fi} />
+              <p className="text-xs text-gray-400 mt-1">Your {(data.provider as string) || 'provider'} API key.</p>
+            </Field>
+            <Field label="Document Number Field">
+              <input type="text" value={(data.documentField as string) || 'document_number'}
+                onChange={e => up('documentField', e.target.value)}
+                placeholder="document_number" className={`${fi} font-mono`} />
+              <p className="text-xs text-gray-400 mt-1">
+                Field path in the previous node&apos;s output containing the document number. Dot notation supported.
+              </p>
+            </Field>
+            <div className="text-xs text-fuchsia-700 bg-fuchsia-50 p-2 rounded border border-fuchsia-100 space-y-1">
+              <p className="font-medium">Verified output fields:</p>
+              <p className="font-mono text-fuchsia-600">verified, document_type, document_number, kyc_data.name, kyc_data.dob, kyc_data.address, raw_response</p>
+            </div>
           </>
         )}
 
