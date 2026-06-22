@@ -189,7 +189,10 @@ export const adminApi = {
     return res.data as AdminUser[];
   },
 
-  updateUser: async (userId: string, data: Partial<{ credits_total: number; is_active: boolean; role: string }>) => {
+  updateUser: async (userId: string, data: Partial<{
+    credits_total: number; add_credits: number; subtract_credits: number;
+    reset_credits_used: boolean; is_active: boolean; role: string;
+  }>) => {
     const res = await api.patch(`/admin/users/${userId}`, data);
     return res.data;
   },
@@ -202,6 +205,12 @@ export const adminApi = {
   getCreditUsage: async () => {
     const res = await api.get('/admin/credit-usage');
     return res.data as CreditBreakdown[];
+  },
+
+  getRawCreditUsage: async (userId?: string) => {
+    const params = userId ? { user_id: userId } : {};
+    const res = await api.get('/admin/credit-usage/raw', { params });
+    return res.data as RawCreditRow[];
   },
 
   getConnectors: async () => {
@@ -252,6 +261,18 @@ export interface CreditBreakdown {
   email: string;
   breakdown: { node_type: string; credits: number; calls: number }[];
   total_credits: number;
+}
+
+export interface RawCreditRow {
+  id: string;
+  user_id: string;
+  email: string;
+  workflow_id: string | null;
+  execution_id: string | null;
+  node_type: string;
+  credits: number;
+  description: string;
+  created_at: string | null;
 }
 
 export interface ConnectorUsage {

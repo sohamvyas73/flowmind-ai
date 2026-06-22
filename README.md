@@ -54,6 +54,8 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 - **AI output formats** — text, JSON, CSV, HTML, Markdown, table, bullet list, or a custom JSON schema you define
 - **Sandboxed Python execution** — run arbitrary Python snippets with an allowlisted stdlib and configurable timeout
 - **Human-in-the-loop** — pause a workflow mid-execution for manual review before continuing
+- **Token-based credit billing** — AI nodes charge 1 credit per 1,000 tokens consumed; non-AI nodes use flat rates; users who supply their own API key are never charged credits
+- **Admin credit management** — add, subtract, set, or reset credits per user from the admin panel; full raw transaction log with per-execution breakdown
 - **Docker Compose** — the entire stack starts with one command
 
 ---
@@ -289,7 +291,26 @@ Then: `docker compose restart backend`. No code changes needed.
 
 ## Roadmap
 
-The current release covers the core canvas, 14 node types, and the execution engine. Below are the planned improvement phases, ordered by priority.
+The phases below track what's been built and what's coming next, ordered by priority.
+
+---
+
+### Phase 1 — Core Platform (Shipped)
+
+| Feature | Status |
+|---|---|
+| 14-node visual canvas (Input, AI, Decision, HTTP, Transform, Rule Engine, Code Runner, Validator, Switch Router, Formatter, Aggregator, Human Review, Verification, Output) | ✅ Done |
+| Routing-aware execution engine with conditional branching | ✅ Done |
+| Indian KYC node (Aadhaar, PAN, Voter ID, Driving Licence, Passport via Surepass / IDfy / Sandbox / Karza) | ✅ Done |
+| JWT auth with signup / login, static Bearer API tokens | ✅ Done |
+| Per-user workflow isolation — users only see their own workflows | ✅ Done |
+| Credit billing — token-based for AI nodes (1 cr / 1K tokens), flat rate for others; own-key usage is free | ✅ Done |
+| Admin panel — user management, per-user credit add/subtract/reset, raw transaction log, pricing guide, account activation, connector usage, platform-wide model settings | ✅ Done |
+| Account activation flow — new users start inactive; admin approves | ✅ Done |
+| Per-user API key config — override Gemini / OpenAI / Anthropic keys; resolution chain: user → platform → env | ✅ Done |
+| Own-key billing exemption — AI node executions using the user's own API key are never charged credits | ✅ Done |
+| Live API panel — shows Bearer token + cURL snippet per workflow | ✅ Done |
+| Docker Compose one-command startup | ✅ Done |
 
 ---
 
@@ -312,7 +333,7 @@ The most impactful missing capability: nodes that can retrieve context from a kn
 
 | Improvement | Description |
 |---|---|
-| **Multi-model support** | Add OpenAI GPT-4o, Anthropic Claude, Mistral, and Ollama (local models) as selectable providers per AI node. Each node picks its own model — use a cheap fast model for classification, a powerful one for reasoning. |
+| **Per-node model selection** | Platform-level API key config for Gemini / OpenAI / Anthropic is already shipped (Phase 1). Next: expose a provider + model dropdown on each individual AI node so one node can use GPT-4o for reasoning while another uses Gemini Flash for classification. Add Mistral and Ollama (local models) as additional providers. |
 | **Streaming output** | Stream LLM tokens to the browser in real time via Server-Sent Events. Long AI nodes currently block until complete — streaming makes execution feel instant and lets users see the model thinking. |
 | **Agent loop node** | A node that runs an LLM in a ReAct loop — the model can call tools (other nodes), observe results, and decide to continue or stop. Enables true autonomous agents, not just linear pipelines. |
 | **Model fallback** | Configure a primary and fallback model per AI node. If the primary times out or rate-limits, the fallback fires automatically. |
@@ -327,6 +348,7 @@ Right now the only trigger is a manual HTTP POST. This phase makes workflows eve
 |---|---|
 | **Scheduled triggers** | Cron-based execution — run a workflow every hour, daily, or on a custom schedule. Useful for batch report generation, periodic data enrichment, and digest emails. |
 | **Webhook triggers** | Register a workflow as a listener for external events — Stripe payments, GitHub push events, Slack messages, form submissions. No polling needed. |
+| **Account approval email** | Transactional email sent to the user the moment an admin approves their account — removes the need to tell users manually. Reuses the SendGrid integration already planned for native integrations. |
 | **Email trigger** | Inbound email parsing — forward emails to a workflow-specific address and the content (sender, subject, body, attachments) becomes the Input node's payload. |
 | **Native integrations** | First-class send nodes for Slack (post message), SendGrid (send email), Twilio (send SMS), and Notion (create/update page) — beyond the current generic webhook Output node. |
 | **Database node** | Execute a SQL SELECT or INSERT directly as a node. Connects to any PostgreSQL or MySQL database. Replaces the pattern of using an HTTP node to call a database-backed API. |
@@ -343,6 +365,7 @@ Right now the only trigger is a manual HTTP POST. This phase makes workflows eve
 | **Secrets manager** | Encrypted credential storage in the database instead of plaintext `.env` values. API keys, bearer tokens, and database passwords are stored encrypted and injected at runtime — never exposed in logs or the UI. |
 | **Execution timeout** | Per-workflow maximum execution time. Workflows that run longer than the configured limit are cancelled and marked as failed — prevents runaway LLM loops from consuming quota indefinitely. |
 | **Rate limiting** | Per-workflow and per-API-key request limits. Prevents a single workflow trigger flood from consuming the entire Gemini quota. |
+| **Credit top-up (Stripe)** | Let users purchase additional credits directly from the UI using Stripe Checkout. Includes Stripe webhook handler for payment confirmation and automatic credit grant — no manual admin action needed. |
 
 ---
 
@@ -350,11 +373,11 @@ Right now the only trigger is a manual HTTP POST. This phase makes workflows eve
 
 | Feature | Description |
 |---|---|
-| **Multi-tenant auth** | User accounts, organisations, and role-based access. Workflows belong to an organisation, not just a single user. Members can view, edit, or execute based on their role. |
+| **Organisation accounts** | Group users under an organisation with shared workflow libraries and unified billing. Members get role-based access (viewer / editor / admin) — extends the per-user auth already shipped in Phase 1. |
 | **Workflow versioning** | Every Save creates a version snapshot. Roll back to any previous version, diff two versions, and promote a version to "active" while keeping the draft in progress. |
 | **Testing mode** | Dry-run a workflow with mock LLM responses — a configurable stub returns a fixed response for every AI node. Lets you test routing logic and validate node configurations without spending API quota. |
 | **Workflow marketplace** | Import and export workflows as JSON. A community gallery of pre-built workflows (KYC, invoice processing, support routing, RAG Q&A, etc.) that can be loaded with one click and customised. |
-| **Execution analytics** | Per-workflow dashboard: success rate, average latency, LLM token usage, cost estimate per execution, and error breakdown by node type. |
+| **User usage dashboard** | Per-user view of their own credit consumption, execution history, success rate, and LLM token usage — extending the admin-only analytics already in the Admin Panel to every user's account settings. |
 | **Sub-workflow node** | Call another saved workflow as a node inside the current one. Enables composing complex pipelines from smaller reusable pieces — the workflow equivalent of a function call. |
 
 ---

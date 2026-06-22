@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import {
   Users, BarChart3, Zap, Globe, Workflow, ArrowLeft,
-  Brain, RefreshCw, Shield, CheckCircle, XCircle,
+  Brain, RefreshCw, Shield, CheckCircle,
   TrendingUp, Activity, CreditCard, ScanLine, ChevronDown, ChevronRight,
-  Settings, Eye, EyeOff, Save, Cpu, UserCheck, Clock,
+  Settings, Eye, EyeOff, Save, Cpu, UserCheck, Clock, Plus, Minus,
+  List, PieChart, RotateCcw, Edit3,
 } from 'lucide-react';
-import { adminApi, AdminUser, CreditBreakdown, ConnectorUsage, AdminWorkflow, PlatformSettings } from '@/services/api';
+import { adminApi, AdminUser, CreditBreakdown, RawCreditRow, ConnectorUsage, AdminWorkflow, PlatformSettings } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 
 type Section = 'overview' | 'users' | 'credits' | 'connectors' | 'workflows' | 'platform';
@@ -18,13 +19,17 @@ const NODE_LABELS: Record<string, string> = {
   humanReviewNode: 'Human Review', inputNode: 'Input', outputNode: 'Output',
 };
 
+// Flat-rate nodes (credits/call)
 const CREDIT_COSTS: Record<string, number> = {
-  aiNode: 10, verificationNode: 10, decisionNode: 10,
   indianKycNode: 15, httpNode: 2, codeNode: 2,
   transformNode: 1, ruleNode: 1, validatorNode: 1,
   switchNode: 1, formatterNode: 1, aggregatorNode: 1,
   humanReviewNode: 1, inputNode: 0, outputNode: 0,
 };
+
+// Token-based nodes — billed at 1 credit per 1,000 tokens (min 1)
+const TOKEN_BASED_NODES = new Set(['aiNode', 'verificationNode', 'decisionNode']);
+const TOKENS_PER_CREDIT = 1000;
 
 function StatCard({ label, value, sub, icon: Icon, color }: {
   label: string; value: string | number; sub?: string;
@@ -63,6 +68,7 @@ function OverviewSection() {
         <StatCard label="Executions" value={stats.total_executions}
           sub={`${stats.success_rate}% success rate`} icon={Activity} color="bg-green-100 text-green-600" />
         <StatCard label="Credits Consumed" value={stats.total_credits_consumed.toLocaleString()}
+          sub={`${stats.total_credits_remaining?.toLocaleString() ?? '—'} remaining across all users`}
           icon={CreditCard} color="bg-amber-100 text-amber-600" />
       </div>
 
@@ -118,14 +124,20 @@ function OverviewSection() {
             <TrendingUp className="w-4 h-4 text-blue-500" /> Credit Pricing Guide
           </p>
           <div className="space-y-1.5">
-            {[['AI / Verify / Decision', '10 credits'], ['Indian KYC', '15 credits'],
-              ['HTTP / Code', '2 credits'], ['Other nodes', '1 credit'], ['Input / Output', 'Free']].map(([k, v]) => (
+            {[
+              ['AI / Verify / Decision', '1 cr / 1K tokens'],
+              ['Indian KYC', '15 cr flat'],
+              ['HTTP / Code', '2 cr flat'],
+              ['Other nodes', '1 cr flat'],
+              ['Input / Output', 'Free'],
+            ].map(([k, v]) => (
               <div key={k} className="flex justify-between text-xs">
                 <span className="text-gray-500">{k}</span>
-                <span className="font-medium text-gray-700">{v}</span>
+                <span className={`font-medium ${v.includes('token') ? 'text-purple-700' : 'text-gray-700'}`}>{v}</span>
               </div>
             ))}
           </div>
+          <p className="text-xs text-gray-400 mt-2 border-t border-gray-100 pt-2">AI nodes: min 1 cr per call</p>
         </div>
       </div>
     </div>
@@ -134,19 +146,38 @@ function OverviewSection() {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
+type CreditAction = { type: 'set' | 'add' | 'sub'; value: number } | null;
+
 function UsersSection() {
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [editing, setEditing] = useState<Record<string, number>>({});
+  const [creditAction, setCreditAction] = useState<Record<string, CreditAction>>({});
+  const [customVal, setCustomVal] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => { adminApi.getUsers().then(setUsers); }, []);
 
-  const saveCredits = async (userId: string) => {
-    setSaving(userId);
+  const applyCredit = async (user: AdminUser, action: CreditAction) => {
+    if (!action) return;
+    setSaving(user.id);
     try {
-      await adminApi.updateUser(userId, { credits_total: editing[userId] });
-      setUsers(u => u.map(x => x.id === userId ? { ...x, credits_total: editing[userId] } : x));
-      setEditing(e => { const n = { ...e }; delete n[userId]; return n; });
+      const payload =
+        action.type === 'set' ? { credits_total: action.value } :
+        action.type === 'add' ? { add_credits: action.value } :
+        { subtract_credits: action.value };
+      const updated = await adminApi.updateUser(user.id, payload);
+      setUsers(u => u.map(x => x.id === user.id ? { ...x, credits_total: updated.credits_total, credits_used: updated.credits_used } : x));
+      setCreditAction(a => { const n = { ...a }; delete n[user.id]; return n; });
+      setCustomVal(v => { const n = { ...v }; delete n[user.id]; return n; });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const resetUsed = async (user: AdminUser) => {
+    setSaving(user.id + '_reset');
+    try {
+      const updated = await adminApi.updateUser(user.id, { reset_credits_used: true });
+      setUsers(u => u.map(x => x.id === user.id ? { ...x, credits_used: updated.credits_used } : x));
     } finally {
       setSaving(null);
     }
@@ -158,133 +189,153 @@ function UsersSection() {
   };
 
   const pending = users.filter(u => !u.is_active && u.role !== 'admin');
-  const active = users.filter(u => u.is_active || u.role === 'admin');
+  const active  = users.filter(u => u.is_active  || u.role === 'admin');
 
-  const UserRow = ({ user }: { user: AdminUser }) => (
-    <tr key={user.id} className="hover:bg-gray-50/50 transition-colors">
-      <td className="px-4 py-3">
-        <p className="font-medium text-gray-900">{user.full_name || '—'}</p>
-        <p className="text-xs text-gray-400 font-mono">{user.email}</p>
-      </td>
-      <td className="px-4 py-3">
-        <Badge
-          label={user.role}
-          color={user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}
-        />
-      </td>
-      <td className="px-4 py-3 text-gray-700 font-medium">{user.workflow_count}</td>
-      <td className="px-4 py-3 text-gray-700 font-medium">{user.execution_count}</td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-700 font-medium">{user.credits_used}</span>
-          <span className="text-gray-400">/</span>
-          {editing[user.id] !== undefined ? (
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                value={editing[user.id]}
-                onChange={e => setEditing(ed => ({ ...ed, [user.id]: parseInt(e.target.value) || 0 }))}
-                className="w-20 px-2 py-0.5 text-xs border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <button
-                onClick={() => saveCredits(user.id)}
-                disabled={saving === user.id}
-                className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {saving === user.id ? '…' : 'Save'}
+  const UserRow = ({ user }: { user: AdminUser }) => {
+    const remaining = user.credits_total - user.credits_used;
+    const pct = Math.min(100, (user.credits_used / Math.max(user.credits_total, 1)) * 100);
+    const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-green-500';
+    const action = creditAction[user.id];
+    const isSaving = saving === user.id;
+    const isResetting = saving === user.id + '_reset';
+
+    return (
+      <tr className="hover:bg-gray-50/50 transition-colors align-top">
+        {/* User */}
+        <td className="px-4 py-3">
+          <p className="font-medium text-gray-900">{user.full_name || '—'}</p>
+          <p className="text-xs text-gray-400 font-mono">{user.email}</p>
+        </td>
+        {/* Role */}
+        <td className="px-4 py-3">
+          <Badge label={user.role} color={user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'} />
+        </td>
+        {/* Workflows / Executions */}
+        <td className="px-4 py-3 text-gray-700 font-medium">{user.workflow_count}</td>
+        <td className="px-4 py-3 text-gray-700 font-medium">{user.execution_count}</td>
+
+        {/* Credits block */}
+        <td className="px-4 py-3 min-w-[220px]">
+          {/* Summary row */}
+          <div className="flex items-baseline gap-1.5 text-sm">
+            <span className="font-bold text-gray-900">{remaining.toLocaleString()}</span>
+            <span className="text-gray-400 text-xs">remaining</span>
+            <span className="text-gray-300">·</span>
+            <span className="text-gray-500 text-xs">{user.credits_used} used / {user.credits_total} total</span>
+          </div>
+          {/* Bar */}
+          <div className="mt-1 mb-2 w-full bg-gray-100 rounded-full h-1.5">
+            <div className={`h-1.5 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+          </div>
+
+          {/* Quick action buttons */}
+          {!action ? (
+            <div className="flex flex-wrap gap-1">
+              {[50, 100, 500].map(n => (
+                <button key={n} onClick={() => applyCredit(user, { type: 'add', value: n })}
+                  className="flex items-center gap-0.5 text-xs px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium">
+                  <Plus className="w-3 h-3" />{n}
+                </button>
+              ))}
+              <button onClick={() => setCreditAction(a => ({ ...a, [user.id]: { type: 'sub', value: 0 } }))}
+                className="flex items-center gap-0.5 text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium">
+                <Minus className="w-3 h-3" />Remove
               </button>
-              <button
-                onClick={() => setEditing(e => { const n = { ...e }; delete n[user.id]; return n; })}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >✕</button>
+              <button onClick={() => { setCreditAction(a => ({ ...a, [user.id]: { type: 'set', value: user.credits_total } })); setCustomVal(v => ({ ...v, [user.id]: String(user.credits_total) })); }}
+                className="flex items-center gap-0.5 text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 font-medium">
+                <Edit3 className="w-3 h-3" />Set
+              </button>
+              <button onClick={() => resetUsed(user)} disabled={isResetting || user.credits_used === 0}
+                className="flex items-center gap-0.5 text-xs px-2 py-0.5 rounded bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 font-medium disabled:opacity-40">
+                <RotateCcw className="w-3 h-3" />{isResetting ? '…' : 'Reset Used'}
+              </button>
             </div>
           ) : (
-            <button
-              onClick={() => setEditing(e => ({ ...e, [user.id]: user.credits_total }))}
-              className="text-gray-700 font-medium hover:text-blue-600 underline decoration-dotted cursor-pointer"
-              title="Click to edit"
-            >
-              {user.credits_total.toLocaleString()}
-            </button>
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-xs text-gray-500 font-medium">
+                {action.type === 'add' ? 'Add:' : action.type === 'sub' ? 'Remove:' : 'Set total:'}
+              </span>
+              <input
+                type="number" min={0} autoFocus
+                value={customVal[user.id] ?? (action.type === 'set' ? String(user.credits_total) : '')}
+                onChange={e => {
+                  const v = e.target.value;
+                  setCustomVal(cv => ({ ...cv, [user.id]: v }));
+                  setCreditAction(a => ({ ...a, [user.id]: { ...action!, value: parseInt(v) || 0 } }));
+                }}
+                className="w-20 px-2 py-0.5 text-xs border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <button onClick={() => applyCredit(user, action)} disabled={isSaving}
+                className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                {isSaving ? '…' : 'Save'}
+              </button>
+              <button onClick={() => { setCreditAction(a => { const n = { ...a }; delete n[user.id]; return n; }); setCustomVal(v => { const n = { ...v }; delete n[user.id]; return n; }); }}
+                className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+            </div>
           )}
-        </div>
-        <div className="mt-1 w-32 bg-gray-100 rounded-full h-1.5">
-          <div
-            className={`h-1.5 rounded-full ${user.credits_used / user.credits_total > 0.9 ? 'bg-red-500' : user.credits_used / user.credits_total > 0.7 ? 'bg-amber-500' : 'bg-green-500'}`}
-            style={{ width: `${Math.min(100, (user.credits_used / Math.max(user.credits_total, 1)) * 100)}%` }}
-          />
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <Badge
-          label={user.is_active ? 'Active' : 'Pending'}
-          color={user.is_active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}
-        />
-      </td>
-      <td className="px-4 py-3 text-xs text-gray-400">
-        {user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}
-      </td>
-      <td className="px-4 py-3">
-        <button
-          onClick={() => toggleActive(user)}
-          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-            user.is_active
-              ? 'bg-red-50 text-red-600 hover:bg-red-100'
-              : 'bg-green-600 text-white hover:bg-green-700'
-          }`}
-        >
-          {user.is_active ? 'Deactivate' : 'Approve'}
-        </button>
-      </td>
-    </tr>
-  );
+        </td>
 
-  const TABLE_HEADERS = ['User', 'Role', 'Workflows', 'Executions', 'Credits Used / Total', 'Status', 'Joined', 'Action'];
+        {/* Status */}
+        <td className="px-4 py-3">
+          <Badge label={user.is_active ? 'Active' : 'Pending'}
+            color={user.is_active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} />
+        </td>
+        {/* Joined */}
+        <td className="px-4 py-3 text-xs text-gray-400">
+          {user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}
+        </td>
+        {/* Activate/Deactivate */}
+        <td className="px-4 py-3">
+          <button onClick={() => toggleActive(user)}
+            className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
+              user.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-600 text-white hover:bg-green-700'
+            }`}>
+            {user.is_active ? 'Deactivate' : 'Approve'}
+          </button>
+        </td>
+      </tr>
+    );
+  };
+
+  const HEADERS = ['User', 'Role', 'Workflows', 'Executions', 'Credits', 'Status', 'Joined', 'Action'];
+
+  const Table = ({ rows, amber }: { rows: AdminUser[]; amber?: boolean }) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className={`text-xs uppercase tracking-wide ${amber ? 'bg-amber-50/50 text-amber-700' : 'bg-gray-50 text-gray-500'}`}>
+          <tr>{HEADERS.map(h => <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>)}</tr>
+        </thead>
+        <tbody className={`divide-y ${amber ? 'divide-amber-50' : 'divide-gray-50'}`}>
+          {rows.map(u => <UserRow key={u.id} user={u} />)}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      {/* Pending approval */}
       {pending.length > 0 && (
         <div className="bg-white rounded-xl border-2 border-amber-300 overflow-hidden">
           <div className="px-5 py-4 border-b border-amber-100 bg-amber-50 flex items-center gap-3">
             <Clock className="w-4 h-4 text-amber-600" />
             <div>
               <p className="font-semibold text-amber-800">Pending Approval ({pending.length})</p>
-              <p className="text-xs text-amber-600">These users signed up and are waiting for your approval to use the platform.</p>
+              <p className="text-xs text-amber-600">These users signed up and are waiting for your approval.</p>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-amber-50/50 text-xs text-amber-700 uppercase tracking-wide">
-                <tr>{TABLE_HEADERS.map(h => <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>)}</tr>
-              </thead>
-              <tbody className="divide-y divide-amber-50">
-                {pending.map(u => <UserRow key={u.id} user={u} />)}
-              </tbody>
-            </table>
-          </div>
+          <Table rows={pending} amber />
         </div>
       )}
 
-      {/* Active / all users */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
           <UserCheck className="w-4 h-4 text-green-600" />
-          <p className="font-semibold text-gray-800">Active Users ({active.length})</p>
+          <p className="font-semibold text-gray-800">All Users ({active.length})</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
-              <tr>{TABLE_HEADERS.map(h => <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {active.map(u => <UserRow key={u.id} user={u} />)}
-              {active.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">No active users yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <Table rows={active} />
+        {active.length === 0 && (
+          <p className="px-4 py-8 text-center text-gray-400 text-sm">No active users yet.</p>
+        )}
       </div>
     </div>
   );
@@ -293,70 +344,244 @@ function UsersSection() {
 // ── Credit Usage ──────────────────────────────────────────────────────────────
 
 function CreditsSection() {
-  const [data, setData] = useState<CreditBreakdown[]>([]);
+  const [tab, setTab] = useState<'summary' | 'transactions' | 'pricing'>('summary');
+  const [summary, setSummary] = useState<CreditBreakdown[]>([]);
+  const [raw, setRaw] = useState<RawCreditRow[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [filterUser, setFilterUser] = useState('');
+  const [loadingRaw, setLoadingRaw] = useState(false);
 
-  useEffect(() => { adminApi.getCreditUsage().then(setData); }, []);
+  useEffect(() => { adminApi.getCreditUsage().then(setSummary); }, []);
+
+  const loadRaw = async (userId?: string) => {
+    setLoadingRaw(true);
+    try { setRaw(await adminApi.getRawCreditUsage(userId)); }
+    finally { setLoadingRaw(false); }
+  };
+
+  useEffect(() => { if (tab === 'transactions') loadRaw(); }, [tab]);
 
   const toggle = (uid: string) =>
     setExpanded(s => { const n = new Set(s); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
 
+  const filteredRaw = filterUser
+    ? raw.filter(r => r.email.toLowerCase().includes(filterUser.toLowerCase()))
+    : raw;
+
+  const uniqueEmails = [...new Set(raw.map(r => r.email))];
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100">
-        <p className="font-semibold text-gray-800">Credit Usage by User</p>
-        <p className="text-xs text-gray-400 mt-0.5">Expand each user to see per-node breakdown</p>
+    <div className="space-y-4">
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+        {([
+          { id: 'summary',      label: 'Summary',      icon: PieChart },
+          { id: 'transactions', label: 'Transactions',  icon: List },
+          { id: 'pricing',      label: 'Pricing Guide', icon: CreditCard },
+        ] as const).map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              tab === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            <Icon className="w-3.5 h-3.5" />{label}
+          </button>
+        ))}
       </div>
-      <div className="divide-y divide-gray-100">
-        {data.map(row => (
-          <div key={row.user_id}>
-            <button
-              onClick={() => toggle(row.user_id)}
-              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors text-left"
-            >
-              <div className="flex items-center gap-3">
-                {expanded.has(row.user_id) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{row.email}</p>
-                  <p className="text-xs text-gray-400">{row.breakdown.length} node type{row.breakdown.length !== 1 ? 's' : ''} used</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-bold text-gray-900">{row.total_credits.toLocaleString()} credits</p>
-              </div>
-            </button>
-            {expanded.has(row.user_id) && (
-              <div className="bg-gray-50 px-5 pb-3">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-gray-400 uppercase tracking-wide">
-                      <th className="text-left py-1.5 pl-7">Node Type</th>
-                      <th className="text-right py-1.5">Calls</th>
-                      <th className="text-right py-1.5">Credits</th>
-                      <th className="text-right py-1.5">Cost/call</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {row.breakdown.sort((a, b) => b.credits - a.credits).map(b => (
-                      <tr key={b.node_type}>
-                        <td className="py-1.5 pl-7 text-gray-700 font-medium">
-                          {NODE_LABELS[b.node_type] || b.node_type}
+
+      {/* Summary — grouped accordion */}
+      {tab === 'summary' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-gray-800">Credit Usage by User</p>
+              <p className="text-xs text-gray-400 mt-0.5">Expand to see per-node breakdown</p>
+            </div>
+            <p className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-1 rounded">
+              Total: {summary.reduce((s, r) => s + r.total_credits, 0).toLocaleString()} cr
+            </p>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {summary.map(row => (
+              <div key={row.user_id}>
+                <button onClick={() => toggle(row.user_id)}
+                  className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors text-left">
+                  <div className="flex items-center gap-3">
+                    {expanded.has(row.user_id)
+                      ? <ChevronDown className="w-4 h-4 text-gray-400" />
+                      : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{row.email}</p>
+                      <p className="text-xs text-gray-400">{row.breakdown.length} node type{row.breakdown.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-bold text-gray-900">{row.total_credits.toLocaleString()} cr</p>
+                </button>
+                {expanded.has(row.user_id) && (
+                  <div className="bg-gray-50 px-5 pb-3">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-400 uppercase tracking-wide">
+                          <th className="text-left py-1.5 pl-7">Node Type</th>
+                          <th className="text-right py-1.5">Calls</th>
+                          <th className="text-right py-1.5">Credits Used</th>
+                          <th className="text-right py-1.5">Cost/call</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {row.breakdown.sort((a, b) => b.credits - a.credits).map(b => (
+                          <tr key={b.node_type}>
+                            <td className="py-1.5 pl-7 text-gray-700 font-medium">{NODE_LABELS[b.node_type] || b.node_type}</td>
+                            <td className="py-1.5 text-right text-gray-600">{b.calls}</td>
+                            <td className="py-1.5 text-right font-semibold text-gray-900">{b.credits}</td>
+                            <td className="py-1.5 text-right text-gray-400">
+                          {TOKEN_BASED_NODES.has(b.node_type)
+                            ? `1/${TOKENS_PER_CREDIT / 1000}K tok`
+                            : (CREDIT_COSTS[b.node_type] ?? '—')}
                         </td>
-                        <td className="py-1.5 text-right text-gray-600">{b.calls}</td>
-                        <td className="py-1.5 text-right font-semibold text-gray-900">{b.credits}</td>
-                        <td className="py-1.5 text-right text-gray-400">{CREDIT_COSTS[b.node_type] ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
+            ))}
+            {summary.length === 0 && (
+              <p className="px-5 py-8 text-center text-gray-400 text-sm">No credit usage recorded yet.</p>
             )}
           </div>
-        ))}
-        {data.length === 0 && (
-          <div className="px-5 py-8 text-center text-gray-400 text-sm">No credit usage recorded yet.</div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Transactions — raw rows */}
+      {tab === 'transactions' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="font-semibold text-gray-800">Raw Transactions</p>
+              <p className="text-xs text-gray-400 mt-0.5">Every credit deduction, newest first (last 200)</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select value={filterUser} onChange={e => setFilterUser(e.target.value)}
+                className="text-xs px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white">
+                <option value="">All users</option>
+                {uniqueEmails.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+              <button onClick={() => loadRaw()} disabled={loadingRaw}
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors disabled:opacity-50">
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingRaw ? 'animate-spin' : ''}`} />Refresh
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                <tr>
+                  {['Time', 'User', 'Node', 'Credits', 'Description', 'Execution ID'].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredRaw.map(row => (
+                  <tr key={row.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">
+                      {row.created_at ? new Date(row.created_at).toLocaleString() : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-gray-600">{row.email}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-medium">
+                        {NODE_LABELS[row.node_type] || row.node_type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-bold text-amber-700">−{row.credits}</td>
+                    <td className="px-4 py-2.5 text-gray-500 max-w-xs truncate">{row.description || '—'}</td>
+                    <td className="px-4 py-2.5 font-mono text-gray-400">
+                      {row.execution_id ? row.execution_id.slice(0, 8) + '…' : '—'}
+                    </td>
+                  </tr>
+                ))}
+                {filteredRaw.length === 0 && !loadingRaw && (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No transactions found.</td></tr>
+                )}
+                {loadingRaw && (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Loading…</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pricing guide */}
+      {tab === 'pricing' && (
+        <div className="space-y-4">
+          {/* Token-based section */}
+          <div className="bg-white rounded-xl border border-purple-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-purple-100 bg-purple-50 flex items-center gap-2">
+              <Brain className="w-4 h-4 text-purple-600" />
+              <div>
+                <p className="font-semibold text-purple-900">Token-Based Billing</p>
+                <p className="text-xs text-purple-600 mt-0.5">
+                  1 credit per {TOKENS_PER_CREDIT.toLocaleString()} tokens (input + output combined) · minimum 1 credit per call
+                </p>
+              </div>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="px-5 py-3 text-left font-medium">Node</th>
+                  <th className="px-5 py-3 text-left font-medium">Type Key</th>
+                  <th className="px-5 py-3 text-right font-medium">Cost Formula</th>
+                  <th className="px-5 py-3 text-right font-medium">Example (2K tokens)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {['aiNode', 'verificationNode', 'decisionNode'].map(type => (
+                  <tr key={type} className="hover:bg-gray-50/50">
+                    <td className="px-5 py-3 font-medium text-gray-800">{NODE_LABELS[type] || type}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-400">{type}</td>
+                    <td className="px-5 py-3 text-right">
+                      <span className="font-bold text-purple-600">⌈tokens ÷ {TOKENS_PER_CREDIT}⌉ cr</span>
+                    </td>
+                    <td className="px-5 py-3 text-right text-sm font-semibold text-gray-700">2 cr</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Flat-rate section */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <p className="font-semibold text-gray-800">Flat-Rate Billing</p>
+              <p className="text-xs text-gray-400 mt-0.5">Fixed credit cost per node execution, regardless of data size</p>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="px-5 py-3 text-left font-medium">Node</th>
+                  <th className="px-5 py-3 text-left font-medium">Type Key</th>
+                  <th className="px-5 py-3 text-right font-medium">Credits / call</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {Object.entries(CREDIT_COSTS).sort((a, b) => b[1] - a[1]).map(([type, cost]) => (
+                  <tr key={type} className="hover:bg-gray-50/50">
+                    <td className="px-5 py-3 font-medium text-gray-800">{NODE_LABELS[type] || type}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-400">{type}</td>
+                    <td className="px-5 py-3 text-right">
+                      <span className={`font-bold ${cost === 0 ? 'text-gray-400' : cost >= 10 ? 'text-red-600' : cost >= 2 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {cost === 0 ? 'Free' : `${cost} cr`}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

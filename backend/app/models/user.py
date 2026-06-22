@@ -20,7 +20,7 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
     api_token = Column(String(64), unique=True, nullable=False, index=True)
-    credits_total = Column(Integer, default=1000, nullable=False)
+    credits_total = Column(Integer, default=100, nullable=False)
     credits_used = Column(Integer, default=0, nullable=False)
     # New users start inactive; admin must approve
     is_active = Column(Boolean, default=False, nullable=False)

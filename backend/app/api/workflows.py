@@ -1,4 +1,5 @@
 import logging
+import math
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
@@ -20,20 +21,34 @@ router = APIRouter()
 workflow_executor = WorkflowExecutor()
 
 def _resolve_api_keys(user: User, db: Session) -> Dict[str, Any]:
-    """Build resolved API key dict: user keys > platform defaults > env."""
+    """Build resolved API key dict: user keys > platform defaults > env.
+    Also tracks _key_sources so billing knows whether the user supplied their own key."""
     platform = db.query(PlatformSetting).filter(PlatformSetting.id == 1).first()
 
     def pick(user_val, platform_attr, env_attr, default=None):
         return user_val or (getattr(platform, platform_attr, None) if platform else None) \
                or getattr(settings, env_attr, None) or default
 
+    def source(user_val, platform_attr):
+        if user_val:
+            return "user"
+        if platform and getattr(platform, platform_attr, None):
+            return "platform"
+        return "env"
+
     return {
-        "gemini_api_key": pick(user.gemini_api_key, "gemini_api_key", "GEMINI_API_KEY"),
-        "gemini_model":   pick(user.gemini_model,   "gemini_model",   "GEMINI_MODEL", "gemini-1.5-pro"),
-        "openai_api_key": pick(user.openai_api_key, "openai_api_key", "OPENAI_API_KEY"),
-        "openai_model":   pick(user.openai_model,   "openai_model",   "OPENAI_MODEL", "gpt-4o"),
+        "gemini_api_key":    pick(user.gemini_api_key,    "gemini_api_key",    "GEMINI_API_KEY"),
+        "gemini_model":      pick(user.gemini_model,      "gemini_model",      "GEMINI_MODEL", "gemini-1.5-pro"),
+        "openai_api_key":    pick(user.openai_api_key,    "openai_api_key",    "OPENAI_API_KEY"),
+        "openai_model":      pick(user.openai_model,      "openai_model",      "OPENAI_MODEL", "gpt-4o"),
         "anthropic_api_key": pick(user.anthropic_api_key, "anthropic_api_key", "ANTHROPIC_API_KEY"),
         "anthropic_model":   pick(user.anthropic_model,   "anthropic_model",   "ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+        # Track which provider key came from the user — used by billing to skip charges
+        "_key_sources": {
+            "gemini":    source(user.gemini_api_key,    "gemini_api_key"),
+            "openai":    source(user.openai_api_key,    "openai_api_key"),
+            "anthropic": source(user.anthropic_api_key, "anthropic_api_key"),
+        },
     }
 
 
@@ -56,34 +71,76 @@ CREDIT_COSTS: Dict[str, int] = {
 }
 
 
+_TOKEN_BASED_NODES = {"aiNode", "verificationNode", "decisionNode"}
+_TOKENS_PER_CREDIT = 1000  # 1 credit = 1,000 tokens, configurable here
+
+
+def _tokens_to_credits(total_tokens: int) -> int:
+    """Convert token count to credits. Minimum 1 credit per call."""
+    return max(1, math.ceil(total_tokens / _TOKENS_PER_CREDIT))
+
+
 def _charge_credits(
     db: Session,
     user_id: Any,
     workflow_id: Any,
     execution_id: Any,
     execution_trace: List[Dict],
+    resolved_keys: Optional[Dict[str, Any]] = None,
 ) -> int:
     if not execution_trace:
         return 0
+
+    # Which provider keys did the user supply themselves?
+    key_sources = (resolved_keys or {}).get("_key_sources", {})
+
     total = 0
     for step in execution_trace:
         node_type = step.get("node_type", "")
-        cost = CREDIT_COSTS.get(node_type, 1)
-        if cost == 0:
-            continue
         result = step.get("result") or {}
-        if node_type == "indianKycNode":
-            desc = f"Indian KYC · {result.get('document_type', '')} · {result.get('provider', '')}"
-        elif node_type == "httpNode":
-            desc = f"HTTP {result.get('method', 'GET')} · {(result.get('url') or '')[:60]}"
-        elif node_type == "aiNode":
-            desc = f"AI · {result.get('task', 'inference')}"
-        elif node_type == "verificationNode":
-            desc = f"Verification · {result.get('verification_type', '')}"
-        elif node_type == "decisionNode":
-            desc = f"Decision · {result.get('decision', '')}"
+
+        # ── Token-based billing for AI nodes ─────────────────────────────────
+        if node_type in _TOKEN_BASED_NODES:
+            # Currently all AI nodes run on Gemini; extend this mapping when per-node
+            # model selection is added (Phase 3).
+            provider = "gemini"
+            if key_sources.get(provider) == "user":
+                # User is paying for this with their own API key — no credit charge
+                logger.info(
+                    "Credits skipped | node=%s | user owns %s key", node_type, provider
+                )
+                continue
+
+            token_usage = result.get("_token_usage") or {}
+            prompt_t     = int(token_usage.get("prompt_tokens", 0))
+            completion_t = int(token_usage.get("completion_tokens", 0))
+            total_t      = int(token_usage.get("total_tokens", 0))
+
+            if total_t > 0:
+                cost = _tokens_to_credits(total_t)
+                token_str = f"{total_t:,} tokens ({prompt_t:,} in + {completion_t:,} out)"
+            else:
+                cost = 1
+                token_str = "tokens not tracked"
+
+            if node_type == "aiNode":
+                desc = f"AI Agent · {result.get('task', 'inference')} · {token_str}"
+            elif node_type == "verificationNode":
+                desc = f"Verification · {result.get('verification_type', '')} · {token_str}"
+            else:
+                desc = f"Decision · {result.get('decision', '')} · {token_str}"
+
+        # ── Flat-rate billing for all other nodes ─────────────────────────────
         else:
-            desc = node_type
+            cost = CREDIT_COSTS.get(node_type, 1)
+            if cost == 0:
+                continue
+            if node_type == "indianKycNode":
+                desc = f"Indian KYC · {result.get('document_type', '')} · {result.get('provider', '')}"
+            elif node_type == "httpNode":
+                desc = f"HTTP {result.get('method', 'GET')} · {(result.get('url') or '')[:60]}"
+            else:
+                desc = node_type
 
         db.add(CreditUsage(
             user_id=user_id,
@@ -252,7 +309,7 @@ async def execute_workflow(
 
     db.commit()
 
-    credits = _charge_credits(db, current_user.id, workflow_id, execution.id, trace or [])
+    credits = _charge_credits(db, current_user.id, workflow_id, execution.id, trace or [], resolved_keys=resolved_keys)
     db.commit()
     if credits:
         logger.info("Credits charged | user=%s credits=%d", current_user.email, credits)
@@ -320,7 +377,7 @@ async def trigger_workflow(
 
     db.commit()
 
-    credits = _charge_credits(db, current_user.id, workflow_id, execution.id, trace or [])
+    credits = _charge_credits(db, current_user.id, workflow_id, execution.id, trace or [], resolved_keys=resolved_keys)
     db.commit()
 
     db.refresh(execution)

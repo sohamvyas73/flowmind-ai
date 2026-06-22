@@ -153,7 +153,7 @@ export function LoginPage() {
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 flex gap-3">
               <Zap className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-semibold text-blue-800">New accounts start with 1,000 credits</p>
+                <p className="text-xs font-semibold text-blue-800">New accounts start with 100 credits</p>
                 <p className="text-xs text-blue-600 mt-0.5">Use them to run AI nodes, KYC checks, and HTTP calls.</p>
               </div>
             </div>

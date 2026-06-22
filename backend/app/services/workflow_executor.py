@@ -102,6 +102,30 @@ class NodeExecutor:
         if not settings.GEMINI_API_KEY:
             logger.warning("GEMINI_API_KEY not set — AI nodes will return errors")
 
+    @staticmethod
+    def _extract_token_usage(response: Any) -> Dict[str, int]:
+        """Extract prompt/completion/total token counts from a LangChain AI message.
+        Handles the standard usage_metadata attribute (LangChain 0.2+) and the
+        Gemini-specific response_metadata fallback."""
+        # Standard LangChain AIMessage.usage_metadata (input_tokens / output_tokens / total_tokens)
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            u = response.usage_metadata
+            return {
+                'prompt_tokens':     int(u.get('input_tokens', 0)),
+                'completion_tokens': int(u.get('output_tokens', 0)),
+                'total_tokens':      int(u.get('total_tokens', 0)),
+            }
+        # Gemini-specific response_metadata.usage_metadata
+        if hasattr(response, 'response_metadata'):
+            u = response.response_metadata.get('usage_metadata', {})
+            if u:
+                return {
+                    'prompt_tokens':     int(u.get('prompt_token_count', 0)),
+                    'completion_tokens': int(u.get('candidates_token_count', 0)),
+                    'total_tokens':      int(u.get('total_token_count', 0)),
+                }
+        return {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+
     def _get_llm(self, temperature: float = 0.0, context: Optional[Dict[str, Any]] = None) -> Optional[ChatGoogleGenerativeAI]:
         """Create an LLM instance. Resolved keys from context take priority over settings."""
         keys = (context or {}).get("_resolved_keys", {})
@@ -244,11 +268,17 @@ class NodeExecutor:
                 except json.JSONDecodeError:
                     pass  # keep as text if JSON parse fails
 
+            token_usage = self._extract_token_usage(response)
+            logger.info(
+                "[ai_node] node=%s | tokens: prompt=%d completion=%d total=%d",
+                node_id, token_usage['prompt_tokens'], token_usage['completion_tokens'], token_usage['total_tokens'],
+            )
             result = {
                 "task": ai_task,
                 "result": result_value,
                 "format": output_format,
                 "confidence": 0.85,
+                "_token_usage": token_usage,
                 "timestamp": datetime.utcnow().isoformat(),
             }
             return result
@@ -298,11 +328,17 @@ class NodeExecutor:
                 response.content,
             )
 
+            token_usage = self._extract_token_usage(response)
+            logger.info(
+                "[verification_node] node=%s | tokens: prompt=%d completion=%d total=%d",
+                node_id, token_usage['prompt_tokens'], token_usage['completion_tokens'], token_usage['total_tokens'],
+            )
             return {
                 "verification_type": verification_type,
                 "result": "pass",
                 "confidence": 0.9,
                 "analysis": response.content,
+                "_token_usage": token_usage,
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
@@ -379,6 +415,12 @@ class NodeExecutor:
                 response.content,
             )
 
+            token_usage = self._extract_token_usage(response)
+            logger.info(
+                "[decision_node] node=%s | tokens: prompt=%d completion=%d total=%d",
+                node_id, token_usage['prompt_tokens'], token_usage['completion_tokens'], token_usage['total_tokens'],
+            )
+
             raw = response.content.strip()
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
@@ -406,6 +448,7 @@ class NodeExecutor:
                 "summary": summary,
                 "key_findings": key_findings,
                 "_active_handles": [decision],
+                "_token_usage": token_usage,
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
@@ -424,6 +467,7 @@ class NodeExecutor:
                 "summary": "",
                 "key_findings": [],
                 "_active_handles": [fallback],
+                "_token_usage": {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
                 "timestamp": datetime.utcnow().isoformat(),
             }
 

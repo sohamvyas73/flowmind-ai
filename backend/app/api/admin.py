@@ -50,6 +50,8 @@ async def get_platform_stats(
     total_workflows = db.query(func.count(Workflow.id)).scalar() or 0
     total_executions = db.query(func.count(WorkflowExecution.id)).scalar() or 0
     total_credits = db.query(func.sum(User.credits_used)).scalar() or 0
+    total_allocated = db.query(func.sum(User.credits_total)).scalar() or 0
+    total_remaining = total_allocated - total_credits
 
     completed = db.query(func.count(WorkflowExecution.id)).filter(
         WorkflowExecution.status == ExecutionStatus.COMPLETED
@@ -73,6 +75,8 @@ async def get_platform_stats(
         "total_workflows": total_workflows,
         "total_executions": total_executions,
         "total_credits_consumed": total_credits,
+        "total_credits_allocated": total_allocated,
+        "total_credits_remaining": total_remaining,
         "completed_executions": completed,
         "failed_executions": failed,
         "success_rate": round(completed / total_executions * 100, 1) if total_executions else 0,
@@ -129,6 +133,12 @@ async def update_user(
 
     if "credits_total" in data:
         user.credits_total = max(0, int(data["credits_total"]))
+    if "add_credits" in data:
+        user.credits_total = user.credits_total + max(0, int(data["add_credits"]))
+    if "subtract_credits" in data:
+        user.credits_total = max(0, user.credits_total - max(0, int(data["subtract_credits"])))
+    if "reset_credits_used" in data and data["reset_credits_used"]:
+        user.credits_used = 0
     if "is_active" in data:
         user.is_active = bool(data["is_active"])
     if "role" in data and data["role"] in ("user", "admin"):
@@ -141,6 +151,7 @@ async def update_user(
         "email": user.email,
         "credits_total": user.credits_total,
         "credits_used": user.credits_used,
+        "credits_remaining": user.credits_total - user.credits_used,
         "is_active": user.is_active,
         "role": user.role,
     }
@@ -311,6 +322,40 @@ async def update_platform_settings(
             "model": s.gemini_model,
         },
     }
+
+
+@router.get("/credit-usage/raw")
+async def get_raw_credit_usage(
+    user_id: Optional[str] = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    _=Depends(get_admin_user),
+):
+    """Individual credit transaction rows, newest first. Filter by user_id if provided."""
+    q = db.query(CreditUsage)
+    if user_id:
+        q = q.filter(CreditUsage.user_id == user_id)
+    rows = q.order_by(CreditUsage.created_at.desc()).limit(limit).all()
+
+    user_cache: Dict[str, str] = {}
+    result = []
+    for row in rows:
+        uid = str(row.user_id)
+        if uid not in user_cache:
+            u = db.query(User).filter(User.id == row.user_id).first()
+            user_cache[uid] = u.email if u else "unknown"
+        result.append({
+            "id": str(row.id),
+            "user_id": uid,
+            "email": user_cache[uid],
+            "workflow_id": str(row.workflow_id) if row.workflow_id else None,
+            "execution_id": str(row.execution_id) if row.execution_id else None,
+            "node_type": row.node_type,
+            "credits": row.credits,
+            "description": row.description or "",
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        })
+    return result
 
 
 @router.get("/workflows")
