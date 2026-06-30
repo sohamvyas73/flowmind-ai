@@ -838,6 +838,10 @@ class NodeExecutor:
         timeout_s = int(node_data.get("timeout", 10))
         previous_output = context.get("previous_output", {})
 
+        if not settings.ENABLE_CODE_NODE:
+            logger.warning("[code_node] node=%s | disabled by ENABLE_CODE_NODE=false", node_id)
+            return {"error": "Code Runner is disabled. Set ENABLE_CODE_NODE=true only in a trusted sandbox environment."}
+
         logger.info("[code_node] node=%s | lines=%d timeout=%ds", node_id, code.count("\n") + 1, timeout_s)
 
         safe_builtins: Dict[str, Any] = {
