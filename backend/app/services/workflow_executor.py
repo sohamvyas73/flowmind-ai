@@ -839,8 +839,16 @@ class NodeExecutor:
         previous_output = context.get("previous_output", {})
 
         if not settings.ENABLE_CODE_NODE:
-            logger.warning("[code_node] node=%s | disabled by ENABLE_CODE_NODE=false", node_id)
-            return {"error": "Code Runner is disabled. Set ENABLE_CODE_NODE=true only in a trusted sandbox environment."}
+            logger.warning("[code_node] node=%s | skipped (ENABLE_CODE_NODE=false)", node_id)
+            return {
+                "skipped": True,
+                "reason": (
+                    "Code Runner is disabled on this deployment. "
+                    "Ask your administrator to set ENABLE_CODE_NODE=true in a trusted sandbox environment."
+                ),
+                "output": previous_output,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
 
         logger.info("[code_node] node=%s | lines=%d timeout=%ds", node_id, code.count("\n") + 1, timeout_s)
 
@@ -1358,11 +1366,12 @@ class WorkflowExecutor:
             result = await self._execute_node(node_type, node.get("data", {}), context)
             elapsed = time.time() - node_start
             has_error = "error" in result
+            is_skipped = bool(result.get("skipped"))
 
             logger.info(
                 "--- NODE END | id=%s type=%s label=%r | %s %.2fs | result=%s ---",
                 node_id, node_type, node_label,
-                "ERROR" if has_error else "OK",
+                "ERROR" if has_error else ("SKIPPED" if is_skipped else "OK"),
                 elapsed,
                 json.dumps(_safe_result(result), ensure_ascii=False)[:300],
             )

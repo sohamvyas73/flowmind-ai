@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { healthCheck } from '@/services/api';
+import { fetchHealth } from '@/services/api';
 import { sampleWorkflows, SampleWorkflow } from '@/data/sampleWorkflows';
 
 interface NodeTypeConfig {
@@ -159,11 +159,13 @@ export function NodePalette() {
   const { setNodes, setEdges, setWorkflowName, setWorkflowDescription } = useWorkflowStore();
   const { fitView } = useReactFlow();
   const [status, setStatus] = useState<BackendStatus>('checking');
+  const [codeNodeEnabled, setCodeNodeEnabled] = useState(true);
 
   useEffect(() => {
     const check = async () => {
-      const online = await healthCheck();
-      setStatus(online ? 'online' : 'offline');
+      const health = await fetchHealth();
+      setStatus(health?.status === 'healthy' ? 'online' : 'offline');
+      setCodeNodeEnabled(health?.features?.code_node ?? false);
     };
     check();
     const id = setInterval(check, 5000);
@@ -211,20 +213,35 @@ export function NodePalette() {
           <p className="text-xs font-semibold text-gray-700 mb-1">Node Library</p>
           <p className="text-xs text-gray-400 mb-3">Drag nodes onto the canvas</p>
           <div className="space-y-1.5">
-            {nodeTypeList.map(({ type, label: nodeLabel, description, icon: Icon, border, bg, text: nodeText }) => (
+            {nodeTypeList.map(({ type, label: nodeLabel, description, icon: Icon, border, bg, text: nodeText }) => {
+              const isDisabledCodeNode = type === 'codeNode' && !codeNodeEnabled;
+              return (
               <div
                 key={type}
-                draggable
-                onDragStart={(e) => onDragStart(e, type)}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 cursor-move hover:shadow-md transition-shadow ${border} ${bg}`}
+                draggable={!isDisabledCodeNode}
+                onDragStart={isDisabledCodeNode ? undefined : (e) => onDragStart(e, type)}
+                title={isDisabledCodeNode ? 'Code Runner is disabled by the server administrator' : undefined}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 transition-shadow ${border} ${bg} ${
+                  isDisabledCodeNode ? 'opacity-50 cursor-not-allowed' : 'cursor-move hover:shadow-md'
+                }`}
               >
                 <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${nodeText}`} />
-                <div className="min-w-0">
-                  <p className={`text-xs font-semibold leading-tight ${nodeText}`}>{nodeLabel}</p>
-                  <p className="text-xs text-gray-400 leading-tight truncate">{description}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className={`text-xs font-semibold leading-tight ${nodeText}`}>{nodeLabel}</p>
+                    {isDisabledCodeNode && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 leading-none">
+                        Disabled
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 leading-tight truncate">
+                    {isDisabledCodeNode ? 'Disabled by admin (ENABLE_CODE_NODE=false)' : description}
+                  </p>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
 
