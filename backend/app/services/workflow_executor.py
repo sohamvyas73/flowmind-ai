@@ -840,7 +840,9 @@ class NodeExecutor:
 
         if not settings.ENABLE_CODE_NODE:
             logger.warning("[code_node] node=%s | skipped (ENABLE_CODE_NODE=false)", node_id)
+            passthrough = previous_output if isinstance(previous_output, dict) else {"value": previous_output}
             return {
+                **passthrough,
                 "skipped": True,
                 "reason": (
                     "Code Runner is disabled on this deployment. "

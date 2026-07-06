@@ -40,6 +40,20 @@ class CodeRunnerSecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("disabled", result["reason"].lower())
         self.assertNotIn("error", result)
         self.assertEqual(result["output"], upstream)
+        self.assertEqual(result["value"], 42)
+
+    @patch.object(settings, "ENABLE_CODE_NODE", False)
+    async def test_skipped_code_node_preserves_upstream_shape_for_downstream(self):
+        upstream = {"inputs": {"customer_id": "abc"}, "filenames": {}}
+
+        result = await self.executor.execute_code_node(
+            {"code": "output = 123"},
+            {"current_node_id": "code_1", "previous_output": upstream},
+        )
+
+        flat = NodeExecutor._flatten_previous(result)
+        self.assertEqual(flat, {"customer_id": "abc"})
+        self.assertEqual(result["inputs"], upstream["inputs"])
 
     @patch.object(settings, "ENABLE_CODE_NODE", True)
     async def test_code_node_requires_explicit_feature_flag(self):
