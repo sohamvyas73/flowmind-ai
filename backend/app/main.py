@@ -77,6 +77,46 @@ def _seed_admin():
 
 _seed_admin()
 
+
+def _warn_workflows_with_disabled_code_node():
+    """Log saved workflows that contain Code Runner nodes when the feature is off."""
+    if settings.ENABLE_CODE_NODE:
+        return
+
+    from app.models.workflow import Workflow
+
+    db = SessionLocal()
+    try:
+        affected = []
+        for wf_id, wf_name, graph_data in (
+            db.query(Workflow.id, Workflow.name, Workflow.graph_data).yield_per(200)
+        ):
+            nodes = (graph_data or {}).get("nodes", [])
+            code_count = sum(1 for n in nodes if n.get("type") == "codeNode")
+            if code_count:
+                affected.append((str(wf_id), wf_name, code_count))
+        if affected:
+            preview = ", ".join(
+                f"{name!r} ({wf_id}, {count} node(s))"
+                for wf_id, name, count in affected[:10]
+            )
+            suffix = f" (+{len(affected) - 10} more)" if len(affected) > 10 else ""
+            logger.warning(
+                "ENABLE_CODE_NODE=false but %d saved workflow(s) contain Code Runner nodes: %s%s. "
+                "Those nodes are skipped at execution (upstream data is passed through). "
+                "Set ENABLE_CODE_NODE=true only in a trusted sandbox to re-enable execution.",
+                len(affected),
+                preview,
+                suffix,
+            )
+    except Exception as e:
+        logger.warning("Could not scan workflows for Code Runner nodes: %s", e)
+    finally:
+        db.close()
+
+
+_warn_workflows_with_disabled_code_node()
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -104,4 +144,9 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "features": {
+            "code_node": settings.ENABLE_CODE_NODE,
+        },
+    }

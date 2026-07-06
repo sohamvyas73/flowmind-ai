@@ -2,13 +2,25 @@ import axios from 'axios';
 import { Workflow, WorkflowExecution } from '@/types/workflow';
 import { AuthUser } from '@/store/authStore';
 
-export const healthCheck = async (): Promise<boolean> => {
+export interface HealthResponse {
+  status: string;
+  features?: {
+    code_node: boolean;
+  };
+}
+
+export const fetchHealth = async (): Promise<HealthResponse | null> => {
   try {
-    await axios.get('/health');
-    return true;
+    const res = await axios.get<HealthResponse>('/health');
+    return res.data;
   } catch {
-    return false;
+    return null;
   }
+};
+
+export const healthCheck = async (): Promise<boolean> => {
+  const health = await fetchHealth();
+  return health?.status === 'healthy';
 };
 
 const api = axios.create({

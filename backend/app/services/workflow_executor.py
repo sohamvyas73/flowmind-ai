@@ -838,6 +838,20 @@ class NodeExecutor:
         timeout_s = int(node_data.get("timeout", 10))
         previous_output = context.get("previous_output", {})
 
+        if not settings.ENABLE_CODE_NODE:
+            logger.warning("[code_node] node=%s | skipped (ENABLE_CODE_NODE=false)", node_id)
+            passthrough = previous_output if isinstance(previous_output, dict) else {"value": previous_output}
+            return {
+                **passthrough,
+                "skipped": True,
+                "reason": (
+                    "Code Runner is disabled on this deployment. "
+                    "Ask your administrator to set ENABLE_CODE_NODE=true in a trusted sandbox environment."
+                ),
+                "output": previous_output,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
         logger.info("[code_node] node=%s | lines=%d timeout=%ds", node_id, code.count("\n") + 1, timeout_s)
 
         safe_builtins: Dict[str, Any] = {
@@ -1354,11 +1368,12 @@ class WorkflowExecutor:
             result = await self._execute_node(node_type, node.get("data", {}), context)
             elapsed = time.time() - node_start
             has_error = "error" in result
+            is_skipped = bool(result.get("skipped"))
 
             logger.info(
                 "--- NODE END | id=%s type=%s label=%r | %s %.2fs | result=%s ---",
                 node_id, node_type, node_label,
-                "ERROR" if has_error else "OK",
+                "ERROR" if has_error else ("SKIPPED" if is_skipped else "OK"),
                 elapsed,
                 json.dumps(_safe_result(result), ensure_ascii=False)[:300],
             )
