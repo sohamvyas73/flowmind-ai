@@ -88,11 +88,13 @@ def _warn_workflows_with_disabled_code_node():
     db = SessionLocal()
     try:
         affected = []
-        for wf in db.query(Workflow).all():
-            nodes = (wf.graph_data or {}).get("nodes", [])
+        for wf_id, wf_name, graph_data in (
+            db.query(Workflow.id, Workflow.name, Workflow.graph_data).yield_per(200)
+        ):
+            nodes = (graph_data or {}).get("nodes", [])
             code_count = sum(1 for n in nodes if n.get("type") == "codeNode")
             if code_count:
-                affected.append((str(wf.id), wf.name, code_count))
+                affected.append((str(wf_id), wf_name, code_count))
         if affected:
             preview = ", ".join(
                 f"{name!r} ({wf_id}, {count} node(s))"

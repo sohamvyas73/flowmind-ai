@@ -159,7 +159,7 @@ export function NodePalette() {
   const { setNodes, setEdges, setWorkflowName, setWorkflowDescription } = useWorkflowStore();
   const { fitView } = useReactFlow();
   const [status, setStatus] = useState<BackendStatus>('checking');
-  const [codeNodeEnabled, setCodeNodeEnabled] = useState(true);
+  const [codeNodeEnabled, setCodeNodeEnabled] = useState(false);
 
   useEffect(() => {
     const check = async () => {

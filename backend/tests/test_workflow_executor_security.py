@@ -3,6 +3,23 @@ import types
 import unittest
 from unittest.mock import patch
 
+_prev_google_genai = sys.modules.get("langchain_google_genai")
+_prev_core_messages = sys.modules.get("langchain_core.messages")
+
+
+def _restore_test_modules() -> None:
+    if _prev_google_genai is None:
+        sys.modules.pop("langchain_google_genai", None)
+    else:
+        sys.modules["langchain_google_genai"] = _prev_google_genai
+    if _prev_core_messages is None:
+        sys.modules.pop("langchain_core.messages", None)
+    else:
+        sys.modules["langchain_core.messages"] = _prev_core_messages
+
+
+unittest.addModuleCleanup(_restore_test_modules)
+
 google_genai = types.ModuleType("langchain_google_genai")
 google_genai.ChatGoogleGenerativeAI = object
 sys.modules["langchain_google_genai"] = google_genai
