@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2 } from 'lucide-react';
+import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2, Database, CalendarClock } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { workflowApi } from '@/services/api';
 import { Workflow } from '@/types/workflow';
@@ -221,6 +221,24 @@ export function Toolbar() {
             </div>
           </div>
         )}
+
+        {/* Data connections + background runs / schedules */}
+        <button
+          onClick={() => setView('connections')}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          title="Data connections"
+        >
+          <Database className="w-4 h-4" />
+          Connections
+        </button>
+        <button
+          onClick={() => setView('automation')}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          title="Background runs & schedules"
+        >
+          <CalendarClock className="w-4 h-4" />
+          Runs
+        </button>
 
         {/* Settings button */}
         <button

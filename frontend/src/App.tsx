@@ -4,6 +4,8 @@ import { WorkflowCanvas } from './components/WorkflowCanvas';
 import { LoginPage } from './pages/LoginPage';
 import { AdminPanel } from './pages/AdminPanel';
 import { ConfigPage } from './pages/ConfigPage';
+import { ConnectionsPage } from './pages/ConnectionsPage';
+import { AutomationPage } from './pages/AutomationPage';
 import { useAuthStore } from './store/authStore';
 import { authApi } from './services/api';
 import { Loader2, Clock, LogOut } from 'lucide-react';
@@ -28,7 +30,7 @@ function PendingApproval() {
           <p className="text-xs font-semibold text-amber-800 mb-1">What happens next?</p>
           <ul className="text-xs text-amber-700 space-y-1">
             <li>• An admin will review and approve your account</li>
-            <li>• You'll start with 1,000 credits to run workflows</li>
+            <li>• You'll get starter credits to run workflows</li>
             <li>• Sign in again after approval to get started</li>
           </ul>
         </div>
@@ -84,6 +86,14 @@ function App() {
 
   if (activeView === 'config') {
     return <ConfigPage />;
+  }
+
+  if (activeView === 'connections') {
+    return <ConnectionsPage />;
+  }
+
+  if (activeView === 'automation') {
+    return <AutomationPage />;
   }
 
   return (

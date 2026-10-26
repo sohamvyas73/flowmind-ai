@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     # Execution traces/inputs/outputs older than this are purged (0 = keep forever)
     EXECUTION_RETENTION_DAYS: int = 30
 
+    # ── Background jobs (PostgreSQL-backed queue) ──────────────────────────────
+    WORKER_ENABLED: bool = True           # run an embedded worker inside the API process
+    WORKER_CONCURRENCY: int = 2
+    JOB_POLL_SECONDS: float = 1.0
+    JOB_LEASE_SECONDS: int = 60           # a worker must heartbeat within this window
+    JOB_MAX_ATTEMPTS: int = 3
+    JOB_RETRY_BASE_SECONDS: int = 10      # backoff: base * 2^(attempt-1)
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_TICK_SECONDS: float = 15.0
+    MAX_SCHEDULES_PER_USER: int = 20
+    MIN_SCHEDULE_INTERVAL_SECONDS: int = 60
+    MAX_CONNECTIONS_PER_USER: int = 50
+
     ADMIN_EMAIL: Optional[str] = None
     ADMIN_PASSWORD: Optional[str] = None
 

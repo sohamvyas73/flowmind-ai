@@ -107,11 +107,11 @@ export function LoginPage() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="password"
-                  placeholder={tab === 'signup' ? 'Min. 6 characters' : '••••••••'}
+                  placeholder={tab === 'signup' ? 'Min. 8 characters' : '••••••••'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
-                  minLength={tab === 'signup' ? 6 : undefined}
+                  minLength={tab === 'signup' ? 8 : undefined}
                   className={`${fi} pl-9`}
                 />
               </div>

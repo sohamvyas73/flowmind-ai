@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, JSON, DateTime, Enum as SQLEnum, Text
+from sqlalchemy import Column, String, JSON, DateTime, Enum as SQLEnum, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 import uuid
@@ -44,5 +44,12 @@ class WorkflowExecution(Base):
     output_data = Column(JSON, nullable=True)
     execution_trace = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
+    # manual | api | schedule | background
+    triggered_by = Column(String(20), nullable=False, default="manual", server_default="manual")
+    schedule_id = Column(UUID(as_uuid=True), nullable=True)
+    # Who is billed (and whose API keys are used): the caller, which may differ from the workflow owner (admins)
+    billed_user_id = Column(UUID(as_uuid=True), nullable=True)
+    # Credits reserved up front and not yet settled (0 once settled; makes settlement idempotent)
+    reserved_credits = Column(Integer, nullable=False, default=0, server_default="0")
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)

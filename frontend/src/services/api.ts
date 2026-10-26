@@ -187,6 +187,151 @@ export const configApi = {
   },
 };
 
+// ── Connections (Phase 1: data plane) ─────────────────────────────────────────
+
+export interface FieldSpec {
+  name: string;
+  label: string;
+  type: 'text' | 'password' | 'number' | 'select';
+  required: boolean;
+  secret: boolean;
+  default?: string | number | null;
+  options?: string[] | null;
+  help?: string | null;
+}
+
+export interface ConnectorSpec {
+  type: string;
+  label: string;
+  description: string;
+  fields: FieldSpec[];
+  supports_discover: boolean;
+  supports_preview: boolean;
+}
+
+export interface Connection {
+  id: string;
+  name: string;
+  type: string;
+  config: Record<string, string | number>;
+  access_mode: 'read_only' | 'read_write';
+  host_allowlist: string[];
+  last_tested_at?: string | null;
+  last_test_ok?: boolean | null;
+  last_test_message?: string | null;
+  owner_email?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  message: string;
+  latency_ms?: number | null;
+  details: Record<string, unknown>;
+}
+
+export interface DatasetColumn { name: string; type: string; nullable: boolean; tags: string[] }
+
+export interface DatasetRef {
+  id: string;
+  kind: string;
+  columns: DatasetColumn[];
+  row_count?: number | null;
+  row_count_is_estimate: boolean;
+  size_bytes?: number | null;
+  sample: Record<string, unknown>[];
+}
+
+export interface DiscoveredTable { schema: string; name: string; type: 'table' | 'view' }
+
+export const connectionsApi = {
+  types: async (): Promise<ConnectorSpec[]> => (await api.get('/connections/types')).data,
+  list: async (all = false): Promise<Connection[]> => (await api.get('/connections', { params: all ? { all: true } : {} })).data,
+  create: async (body: {
+    name: string; type: string; config: Record<string, unknown>; access_mode: string; host_allowlist?: string[];
+  }): Promise<Connection> => (await api.post('/connections', body)).data,
+  update: async (id: string, body: Partial<{
+    name: string; config: Record<string, unknown>; access_mode: string; host_allowlist: string[];
+  }>): Promise<Connection> => (await api.patch(`/connections/${id}`, body)).data,
+  remove: async (id: string): Promise<void> => { await api.delete(`/connections/${id}`); },
+  test: async (id: string): Promise<ConnectionTestResult> => (await api.post(`/connections/${id}/test`)).data,
+  discover: async (id: string): Promise<{ tables: DiscoveredTable[]; truncated: boolean }> =>
+    (await api.get(`/connections/${id}/discover`)).data,
+  preview: async (id: string, schema: string, table: string): Promise<DatasetRef> =>
+    (await api.get(`/connections/${id}/preview`, { params: { schema, table } })).data,
+};
+
+// ── Runs & schedules (Phase 1: job queue) ──────────────────────────────────────
+
+export interface JobInfo {
+  id: string;
+  state: 'queued' | 'running' | 'succeeded' | 'cancelled' | 'dead_lettered';
+  attempts: number;
+  max_attempts: number;
+  run_after?: string | null;
+  last_error?: string | null;
+  cancel_requested: boolean;
+}
+
+export interface RunSummary {
+  execution_id: string;
+  workflow_id: string;
+  workflow_name?: string | null;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  triggered_by?: string | null;
+  schedule_id?: string | null;
+  started_at: string;
+  completed_at?: string | null;
+  error_message?: string | null;
+  job?: JobInfo | null;
+}
+
+export interface RunDetail extends RunSummary {
+  input_data?: Record<string, unknown> | null;
+  output_data?: Record<string, unknown> | null;
+  execution_trace?: { node_id: string; node_type: string; result: unknown; timestamp: string }[] | null;
+}
+
+export interface Schedule {
+  id: string;
+  workflow_id: string;
+  workflow_name?: string | null;
+  name: string;
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+  last_status?: string | null;
+  last_execution_id?: string | null;
+  input_data?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export const runsApi = {
+  start: async (workflowId: string, inputData?: Record<string, unknown>) =>
+    (await api.post('/runs', { workflow_id: workflowId, input_data: inputData })).data as
+      { execution_id: string; job_id: string; status: string },
+  list: async (workflowId?: string): Promise<RunSummary[]> =>
+    (await api.get('/runs', { params: workflowId ? { workflow_id: workflowId } : {} })).data,
+  get: async (executionId: string): Promise<RunDetail> => (await api.get(`/runs/${executionId}`)).data,
+  cancel: async (executionId: string): Promise<RunSummary> => (await api.post(`/runs/${executionId}/cancel`)).data,
+};
+
+export const schedulesApi = {
+  list: async (workflowId?: string): Promise<Schedule[]> =>
+    (await api.get('/schedules', { params: workflowId ? { workflow_id: workflowId } : {} })).data,
+  create: async (body: {
+    workflow_id: string; name: string; cron: string; timezone: string;
+    input_data?: Record<string, unknown>; enabled?: boolean;
+  }): Promise<Schedule> => (await api.post('/schedules', body)).data,
+  update: async (id: string, body: Partial<{
+    name: string; cron: string; timezone: string; input_data: Record<string, unknown>; enabled: boolean;
+  }>): Promise<Schedule> => (await api.patch(`/schedules/${id}`, body)).data,
+  remove: async (id: string): Promise<void> => { await api.delete(`/schedules/${id}`); },
+};
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export const adminApi = {
@@ -233,6 +378,11 @@ export const adminApi = {
     const res = await api.get('/admin/workflows');
     return res.data as AdminWorkflow[];
   },
+
+  getJobStats: async (): Promise<JobStats> => (await api.get('/admin/jobs/stats')).data,
+
+  listJobs: async (state = 'dead_lettered'): Promise<AdminJob[]> =>
+    (await api.get('/admin/jobs', { params: { state } })).data,
 
   getPlatformSettings: async (): Promise<PlatformSettings> => {
     const res = await api.get('/admin/platform-settings');
@@ -305,4 +455,20 @@ export interface AdminWorkflow {
   node_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface JobStats {
+  counts: Record<'queued' | 'running' | 'succeeded' | 'cancelled' | 'dead_lettered', number>;
+  oldest_queued_age_s: number;
+}
+
+export interface AdminJob {
+  id: string;
+  kind: string;
+  state: string;
+  attempts: number;
+  max_attempts: number;
+  last_error?: string | null;
+  execution_id?: string | null;
+  created_at?: string | null;
 }

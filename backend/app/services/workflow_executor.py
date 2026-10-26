@@ -5,7 +5,6 @@ import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import asyncio
-import httpx
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from app.core.config import settings

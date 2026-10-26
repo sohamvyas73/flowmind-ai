@@ -62,6 +62,8 @@ class ExecutionResponse(BaseModel):
     output_data: Optional[Dict[str, Any]]
     execution_trace: Optional[List[Dict[str, Any]]]
     error_message: Optional[str]
+    triggered_by: Optional[str] = None
+    schedule_id: Optional[UUID] = None
     started_at: datetime
     completed_at: Optional[datetime]
 
