@@ -36,6 +36,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@postgres:5432/ai_workflow
       REDIS_URL: redis://redis:6379
+      DATA_DIR: /data
     ports:
       - "8000:8000"
     depends_on:
@@ -45,7 +46,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app:/app/app
+      - flowmind_data:/data          # uploaded files and pipeline outputs
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   postgres_data:
+  flowmind_data:

@@ -9,6 +9,9 @@ interface WorkflowState {
   workflowDescription: string;
   workflowId: string | null;
   showLivePanel: boolean;
+  // Column schemas per node id, filled by a data preview; powers the column pickers in the properties panel
+  previewSchemas: Record<string, { name: string; type: string }[]>;
+  setPreviewSchemas: (schemas: Record<string, { name: string; type: string }[]>) => void;
 
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
@@ -38,6 +41,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   workflowDescription: '',
   workflowId: null,
   showLivePanel: false,
+  previewSchemas: {},
+  setPreviewSchemas: (schemas) => set({ previewSchemas: schemas }),
   
   setNodes: (nodes) => set({ nodes }),
   
@@ -106,6 +111,29 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       data.valueField = '';
       data.groupBy = '';
       data.separator = ', ';
+    } else if (type === 'loadDataNode') {
+      data.source = 'file';
+      data.fileName = '';
+      data.connectionId = '';
+      data.schema = 'public';
+      data.table = '';
+      data.maxRows = '';
+    } else if (type === 'cleanDataNode') {
+      data.trimAll = true;
+      data.removeDuplicates = false;
+      data.dropMissing = [];
+      data.fillMissing = [];
+      data.rename = [];
+      data.keepColumns = [];
+    } else if (type === 'combineDataNode') {
+      data.joinType = 'inner';
+      data.keys = [{ left: '', right: '' }];
+      data.swap = false;
+    } else if (type === 'summariseDataNode') {
+      data.groupBy = [];
+      data.aggregations = [{ column: '*', fn: 'count', as: 'row_count' }];
+    } else if (type === 'sqlNode') {
+      data.query = 'SELECT *\nFROM input\nLIMIT 100';
     } else if (type === 'indianKycNode') {
       data.documentType = 'pan';
       data.provider = 'surepass';
@@ -182,6 +210,11 @@ function getNodeLabel(type: string): string {
     formatterNode: 'Formatter',
     aggregatorNode: 'Aggregator',
     indianKycNode: 'Indian KYC',
+    loadDataNode: 'Load Data',
+    cleanDataNode: 'Clean',
+    combineDataNode: 'Combine',
+    summariseDataNode: 'Summarise',
+    sqlNode: 'SQL',
   };
   return labels[type] || 'Node';
 }

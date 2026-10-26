@@ -9,7 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from app.core.config import settings
 from app.core.url_safety import safe_request, UnsafeURLError
-from app.services import code_sandbox
+from app.services import code_sandbox, data_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -858,6 +858,23 @@ class NodeExecutor:
             logger.error("[code_node] node=%s | %s: %s", node_id, type(e).__name__, e)
             return {"error": f"{type(e).__name__}: {e}"}
 
+    # ── Data nodes (Phase 2) ───────────────────────────────────────────────────
+
+    async def execute_load_data_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await data_nodes.run_load(node_data, context)
+
+    async def execute_clean_data_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await data_nodes.run_clean(node_data, context)
+
+    async def execute_combine_data_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await data_nodes.run_combine(node_data, context)
+
+    async def execute_summarise_data_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await data_nodes.run_summarise(node_data, context)
+
+    async def execute_sql_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await data_nodes.run_sql_node(node_data, context)
+
     # ── Schema Validator node ──────────────────────────────────────────────────
 
     async def execute_validator_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -1282,6 +1299,13 @@ class NodeExecutor:
             return {"error": f"Indian KYC request failed: {e}"}
 
 
+# Node types that are safe and free to run in a sample preview
+DRY_RUN_NODE_TYPES = {
+    "inputNode", "outputNode", "transformNode", "formatterNode", "aggregatorNode", "ruleNode", "switchNode",
+    "validatorNode", *data_nodes.DATA_NODE_TYPES,
+}
+
+
 # ── Workflow orchestrator ──────────────────────────────────────────────────────
 
 class WorkflowExecutor:
@@ -1294,6 +1318,9 @@ class WorkflowExecutor:
         graph_data: Dict[str, Any],
         input_data: Optional[Dict[str, Any]] = None,
         resolved_keys: Optional[Dict[str, Any]] = None,
+        user_id: Any = None,
+        execution_id: Any = None,
+        dry_run: bool = False,
     ) -> Dict[str, Any]:
         nodes: List[Dict] = graph_data.get("nodes", [])
         edges: List[Dict] = graph_data.get("edges", [])
@@ -1318,6 +1345,13 @@ class WorkflowExecutor:
             "input": input_data,
             "previous_output": input_data or {},
             "_resolved_keys": resolved_keys or {},
+            # data-node plumbing: who is running, whether this is a sample preview, and every node's output
+            "_user_id": user_id,
+            "_execution_id": execution_id,
+            "_dry_run": dry_run,
+            "_outputs": {},
+            "_incoming": {t: [e["source"] for e in es] for t, es in incoming.items()},
+            "_labels": {n["id"]: n.get("data", {}).get("label", n["id"]) for n in nodes},
         }
         workflow_start = time.time()
         executed: set = set()
@@ -1393,6 +1427,7 @@ class WorkflowExecutor:
                 }
 
             context["previous_output"] = result
+            context["_outputs"][node_id] = result
 
             # ── Conditional edge routing via _active_handles ───────────────────
             active_handles: Optional[List[str]] = result.get("_active_handles")
@@ -1450,7 +1485,19 @@ class WorkflowExecutor:
             "formatterNode":    self.node_executor.execute_formatter_node,
             "aggregatorNode":   self.node_executor.execute_aggregator_node,
             "indianKycNode":    self.node_executor.execute_indian_kyc_node,
+            "loadDataNode":      self.node_executor.execute_load_data_node,
+            "cleanDataNode":     self.node_executor.execute_clean_data_node,
+            "combineDataNode":   self.node_executor.execute_combine_data_node,
+            "summariseDataNode": self.node_executor.execute_summarise_data_node,
+            "sqlNode":           self.node_executor.execute_sql_node,
         }
+        if context.get("_dry_run") and node_type not in DRY_RUN_NODE_TYPES:
+            # Preview mode never calls paid or side-effecting services (AI, HTTP, KYC, code, review)
+            return {
+                "skipped": True, "dry_run": True,
+                "note": "Skipped in preview: this node calls an external service or has side effects.",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
         executor = executor_map.get(node_type)
         if not executor:
             logger.error("Unknown node type: %s", node_type)

@@ -1,6 +1,6 @@
 # Node Reference
 
-Complete reference for all 14 node types. Each section covers what the node does, every configuration field, the structure of its output, and a practical example.
+Complete reference for all 14 workflow node types, plus the 5 [data nodes](#data-nodes). Each section covers what the node does, every configuration field, the structure of its output, and a practical example.
 
 ---
 
@@ -718,3 +718,45 @@ Three nodes use `_active_handles` to control conditional branching:
 | Switch Router | `case_0`...`case_N`, `default` | Based on field value match |
 
 Non-routing nodes have no `_active_handles` in their output — all their outgoing edges fire unconditionally.
+
+---
+
+## Data nodes
+
+Five nodes for data pipelines (cyan). They pass **tables** between each other instead of JSON documents. For a
+step-by-step introduction with real example outputs, read the [Data Pipelines guide](data-pipelines-guide.md); for
+internals, see [phase2-data-engine.md](phase2-data-engine.md).
+
+**Common behaviour**
+
+- Output: `dataset_id`, `dataset` (columns with types, a small masked sample, row count, lineage), `row_count`,
+  `columns` (names), `sql` (the query that produced it).
+- Connect data nodes to each other; downstream JSON nodes (Rule, Switch, AI, Formatter, HTTP…) can read `dataset.sample`.
+- **Preview data** runs them on a ≤1,000-row sample for free; **Execute** runs everything and saves the tables.
+- Credits: Load 1 · Clean 1 · Summarise 1 · Combine 2 · SQL 2, plus 1 per 100 MB scanned / 30 s of compute.
+
+### 15. Load Data Node
+
+**Handles:** one source (right). **Config:** `source` (`file` \| `connection`), `fileName`/`fileId`, `connectionId`,
+`schema`, `table`, `columns` (optional list), `maxRows` (optional).
+
+### 16. Clean Node
+
+**Handles:** target (left), source (right). **Config:** `trimAll`, `removeDuplicates`, `dropMissing` (columns),
+`fillMissing` (`[{column, value}]`), `textCase` (`{columns, mode: lower|upper}`), `rename` (`[{from, to}]`),
+`keepColumns`.
+
+### 17. Combine Node
+
+**Handles:** target (left, two connections), source (right). **Config:** `joinType` (`inner|left|right|full`),
+`keys` (`[{left, right}]`), `swap`. The first connection is the left table. Clashing column names get a `_right` suffix.
+
+### 18. Summarise Node
+
+**Handles:** target (left), source (right). **Config:** `groupBy` (columns), `aggregations`
+(`[{column, fn, as}]`, `fn` ∈ `count`, `count_distinct`, `sum`, `avg`, `min`, `max`, `median`; use `column: "*"` with `count`).
+
+### 19. SQL Node
+
+**Handles:** target (left, one or more), source (right). **Config:** `query` — exactly one `SELECT`. Tables: `input`,
+`input2`…, and a slug of each upstream node's label. No files or network; stopped after `ENGINE_TIMEOUT_S`.

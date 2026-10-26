@@ -4,6 +4,7 @@ import {
   Database, Brain, CheckCircle, GitBranch, Send,
   Globe, Shuffle, UserCheck,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine,
+  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2,
 } from 'lucide-react';
 
 const nodeStyles = 'px-4 py-3 shadow-lg rounded-lg border-2 bg-white min-w-[160px]';
@@ -272,3 +273,95 @@ SwitchNode.displayName      = 'SwitchNode';
 FormatterNode.displayName   = 'FormatterNode';
 AggregatorNode.displayName  = 'AggregatorNode';
 IndianKycNode.displayName   = 'IndianKycNode';
+
+// ── Data nodes (Phase 2) ──────────────────────────────────────────────────────
+
+export const LoadDataNode = memo(({ data, selected }: NodeProps) => (
+  <div className={`${nodeStyles} ${selected ? 'border-cyan-500' : 'border-gray-300'}`}>
+    <div className="flex items-center gap-2">
+      <FileSpreadsheet className="w-5 h-5 text-cyan-600" />
+      <div className="font-semibold text-sm">{data.label}</div>
+    </div>
+    <div className="text-xs text-gray-600 mt-1 bg-cyan-50 px-2 py-1 rounded truncate max-w-[200px]">
+      {data.source === 'connection'
+        ? (data.table ? `database · ${data.table}` : 'database · pick a table')
+        : (data.fileName ? `file · ${data.fileName}` : 'file · pick a file')}
+    </div>
+    <Handle type="source" position={Position.Right} className="w-3 h-3 bg-cyan-500" />
+  </div>
+));
+
+export const CleanDataNode = memo(({ data, selected }: NodeProps) => {
+  const ops = [
+    data.trimAll && 'trim', data.removeDuplicates && 'dedupe',
+    Array.isArray(data.dropMissing) && data.dropMissing.length > 0 && 'drop empty',
+    Array.isArray(data.fillMissing) && data.fillMissing.length > 0 && 'fill',
+    Array.isArray(data.rename) && data.rename.length > 0 && 'rename',
+  ].filter(Boolean);
+  return (
+    <div className={`${nodeStyles} ${selected ? 'border-cyan-500' : 'border-gray-300'}`}>
+      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-cyan-500" />
+      <div className="flex items-center gap-2">
+        <Eraser className="w-5 h-5 text-cyan-600" />
+        <div className="font-semibold text-sm">{data.label}</div>
+      </div>
+      <div className="text-xs text-gray-600 mt-1 bg-cyan-50 px-2 py-1 rounded">{ops.length ? ops.join(' · ') : 'no changes yet'}</div>
+      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-cyan-500" />
+    </div>
+  );
+});
+
+export const CombineDataNode = memo(({ data, selected }: NodeProps) => {
+  const keys = Array.isArray(data.keys) ? (data.keys as { left?: string; right?: string }[]) : [];
+  const k = keys[0];
+  return (
+    <div className={`${nodeStyles} ${selected ? 'border-cyan-500' : 'border-gray-300'}`}>
+      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-cyan-500" />
+      <div className="flex items-center gap-2">
+        <Merge className="w-5 h-5 text-cyan-600" />
+        <div className="font-semibold text-sm">{data.label}</div>
+      </div>
+      <div className="text-xs text-gray-600 mt-1 bg-cyan-50 px-2 py-1 rounded font-mono">
+        {String(data.joinType || 'inner')} join{k?.left ? ` on ${k.left}` : ''}
+      </div>
+      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-cyan-500" />
+    </div>
+  );
+});
+
+export const SummariseDataNode = memo(({ data, selected }: NodeProps) => {
+  const group = Array.isArray(data.groupBy) ? (data.groupBy as string[]) : [];
+  return (
+    <div className={`${nodeStyles} ${selected ? 'border-cyan-500' : 'border-gray-300'}`}>
+      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-cyan-500" />
+      <div className="flex items-center gap-2">
+        <Sigma className="w-5 h-5 text-cyan-600" />
+        <div className="font-semibold text-sm">{data.label}</div>
+      </div>
+      <div className="text-xs text-gray-600 mt-1 bg-cyan-50 px-2 py-1 rounded truncate max-w-[200px]">
+        {group.length ? `by ${group.join(', ')}` : 'whole table'}
+      </div>
+      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-cyan-500" />
+    </div>
+  );
+});
+
+export const SqlNode = memo(({ data, selected }: NodeProps) => (
+  <div className={`${nodeStyles} ${selected ? 'border-cyan-500' : 'border-gray-300'}`}>
+    <Handle type="target" position={Position.Left} className="w-3 h-3 bg-cyan-500" />
+    <div className="flex items-center gap-2">
+      <FileCode2 className="w-5 h-5 text-cyan-600" />
+      <div className="font-semibold text-sm">{data.label}</div>
+    </div>
+    <div className="text-xs text-gray-600 mt-1 bg-cyan-50 px-2 py-1 rounded font-mono truncate max-w-[200px]">
+      {String(data.query || '').replace(/\s+/g, ' ').slice(0, 40) || 'SELECT …'}
+    </div>
+    <Handle type="source" position={Position.Right} className="w-3 h-3 bg-cyan-500" />
+  </div>
+));
+
+LoadDataNode.displayName = 'LoadDataNode';
+CleanDataNode.displayName = 'CleanDataNode';
+CombineDataNode.displayName = 'CombineDataNode';
+SummariseDataNode.displayName = 'SummariseDataNode';
+SqlNode.displayName = 'SqlNode';

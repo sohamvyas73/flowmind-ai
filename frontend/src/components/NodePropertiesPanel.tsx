@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { InputField } from '@/types/workflow';
+import { DataNodeProperties } from './DataNodeProperties';
 import { X, Plus } from 'lucide-react';
 
 // Placeholder the server returns for stored node secrets (API keys / auth values)
@@ -18,11 +19,11 @@ const asRows = (key: string, data: Record<string, unknown>): Row[] =>
 
 // ── Reusable sub-components ────────────────────────────────────────────────────
 const lbl = 'block text-sm font-medium text-gray-700 mb-1';
-const inp = (ring = 'focus:ring-blue-500') =>
+export const inp = (ring = 'focus:ring-blue-500') =>
   `w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 ${ring} text-sm`;
 const mono = 'font-mono text-xs';
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <label className={lbl}>{label}</label>
@@ -31,7 +32,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Select({
+export function Select({
   value, onChange, ring = 'focus:ring-blue-500', children,
 }: { value: string; onChange: (v: string) => void; ring?: string; children: React.ReactNode }) {
   return (
@@ -42,7 +43,7 @@ function Select({
   );
 }
 
-function TextArea({
+export function TextArea({
   value, onChange, rows = 3, placeholder = '', ring = 'focus:ring-blue-500', extraClass = '',
 }: { value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; ring?: string; extraClass?: string }) {
   return (
@@ -78,6 +79,8 @@ export function NodePropertiesPanel() {
     validatorNode: 'focus:ring-emerald-500', switchNode: 'focus:ring-violet-500',
     formatterNode: 'focus:ring-lime-600', aggregatorNode: 'focus:ring-sky-500',
     indianKycNode: 'focus:ring-fuchsia-500',
+    loadDataNode: 'focus:ring-cyan-500', cleanDataNode: 'focus:ring-cyan-500', combineDataNode: 'focus:ring-cyan-500',
+    summariseDataNode: 'focus:ring-cyan-500', sqlNode: 'focus:ring-cyan-500',
   };
   const ring = ringMap[selectedNode.type || ''] || 'focus:ring-blue-500';
   const fi = inp(ring);
@@ -749,6 +752,11 @@ export function NodePropertiesPanel() {
               <p className="font-mono text-fuchsia-600">verified, document_type, document_number, kyc_data.name, kyc_data.dob, kyc_data.address</p>
             </div>
           </>
+        )}
+
+        {/* ═══════════════════ DATA NODES ═══════════════════ */}
+        {['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode'].includes(t || '') && (
+          <DataNodeProperties node={selectedNode} data={data} up={up} />
         )}
 
       </div>

@@ -47,6 +47,19 @@ class Settings(BaseSettings):
     MIN_SCHEDULE_INTERVAL_SECONDS: int = 60
     MAX_CONNECTIONS_PER_USER: int = 50
 
+    # ── Data engine (Phase 2) ──────────────────────────────────────────────────
+    DATA_DIR: str = "./data"              # local object storage root (swap for S3/GCS via app/storage)
+    MAX_UPLOAD_MB: int = 25
+    MAX_STORAGE_MB_PER_USER: int = 500    # uploads + materialised datasets
+    ENGINE_TIMEOUT_S: int = 60            # hard-kill a SQL job after this long
+    ENGINE_MEMORY_MB: int = 512           # DuckDB memory_limit per job
+    ENGINE_MAX_CONCURRENT: int = 2        # SQL jobs running at once on this process
+    MAX_LOAD_ROWS: int = 1_000_000        # rows a Load Data node may pull from a database
+    MAX_RESULT_ROWS: int = 1_000_000      # rows a SQL job may produce
+    DRY_RUN_ROWS: int = 1000              # sample size for preview runs
+    PREVIEW_RATE_LIMIT_PER_MIN: int = 20
+    DATASET_RETENTION_DAYS: int = 7       # run-produced datasets are deleted after this (0 = keep)
+
     ADMIN_EMAIL: Optional[str] = None
     ADMIN_PASSWORD: Optional[str] = None
 

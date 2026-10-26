@@ -6,6 +6,7 @@ import {
   Database, Brain, CheckCircle, GitBranch, Send,
   Globe, Shuffle, UserCheck, Clock,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator,
+  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2,
 } from 'lucide-react';
 import { WorkflowExecution, InputField } from '@/types/workflow';
 
@@ -26,6 +27,11 @@ const nodeIcons: Record<string, React.FC<{ className?: string }>> = {
   switchNode:       ({ className }) => <GitFork       className={className} />,
   formatterNode:    ({ className }) => <FileText      className={className} />,
   aggregatorNode:   ({ className }) => <Calculator    className={className} />,
+  loadDataNode:      ({ className }) => <FileSpreadsheet className={className} />,
+  cleanDataNode:     ({ className }) => <Eraser          className={className} />,
+  combineDataNode:   ({ className }) => <Merge           className={className} />,
+  summariseDataNode: ({ className }) => <Sigma           className={className} />,
+  sqlNode:           ({ className }) => <FileCode2       className={className} />,
 };
 
 const nodeColors: Record<string, string> = {
@@ -43,6 +49,11 @@ const nodeColors: Record<string, string> = {
   switchNode:       'text-violet-600',
   formatterNode:    'text-lime-700',
   aggregatorNode:   'text-sky-600',
+  loadDataNode:      'text-cyan-600',
+  cleanDataNode:     'text-cyan-600',
+  combineDataNode:   'text-cyan-600',
+  summariseDataNode: 'text-cyan-600',
+  sqlNode:           'text-cyan-600',
 };
 
 interface ExecutionModalProps {
@@ -326,6 +337,18 @@ function StepSummary({ result }: { result: Record<string, unknown> | undefined }
   if (result.error) return <p className="text-xs text-red-600">{result.error as string}</p>;
 
   const safe = sanitizeForDisplay(result) as Record<string, unknown>;
+
+  // Data nodes: show the shape of the table they produced (full table: "Preview data" or the Data page)
+  if (result.dataset && typeof result.dataset === 'object') {
+    const d = result.dataset as { row_count?: number | null; columns?: { name: string }[] };
+    const names = (d.columns ?? []).map(c => c.name);
+    return (
+      <p className="text-xs text-gray-600 mt-1">
+        <span className="font-medium">{(d.row_count ?? 0).toLocaleString()} rows</span> × {names.length} columns
+        {names.length > 0 && <span className="font-mono text-gray-500"> ({names.slice(0, 6).join(', ')}{names.length > 6 ? ', …' : ''})</span>}
+      </p>
+    );
+  }
 
   // Human Review node — awaiting review
   if (safe.status === 'awaiting_review') {

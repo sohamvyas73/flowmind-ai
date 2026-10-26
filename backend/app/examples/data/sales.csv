@@ -1,0 +1,57 @@
+date,region,product,units,revenue
+2026-03-01,North,Water Bottle,13,3887
+2026-03-01,South,Keyboard,10,15990
+2026-03-01,East,Water Bottle,28,8372
+2026-03-01,West,Backpack,28,24920
+2026-03-02,North,Backpack,29,25810
+2026-03-02,South,Desk Lamp,26,19474
+2026-03-02,East,Backpack,9,8010
+2026-03-02,West,Water Bottle,18,5382
+2026-03-03,North,Headphones,26,64974
+2026-03-03,South,Notebook,3,360
+2026-03-03,East,Headphones,18,44982
+2026-03-03,West,Headphones,9,22491
+2026-03-04,North,Keyboard,22,35178
+2026-03-04,South,Headphones,17,42483
+2026-03-04,East,Keyboard,14,22386
+2026-03-04,West,Headphones,5,12495
+2026-03-05,North,Backpack,6,5340
+2026-03-05,South,Backpack,18,16020
+2026-03-05,East,Backpack,13,11570
+2026-03-05,West,Backpack,18,16020
+2026-03-06,North,Water Bottle,22,6578
+2026-03-06,South,Notebook,18,2160
+2026-03-06,East,Keyboard,14,22386
+2026-03-06,West,Keyboard,5,7995
+2026-03-07,North,Keyboard,6,9594
+2026-03-07,South,Desk Lamp,28,20972
+2026-03-07,East,Keyboard,27,43173
+2026-03-07,West,Backpack,18,16020
+2026-03-08,North,Backpack,16,14240
+2026-03-08,South,Keyboard,13,20787
+2026-03-08,East,Notebook,28,3360
+2026-03-08,West,Keyboard,15,23985
+2026-03-09,North,Desk Lamp,15,11235
+2026-03-09,South,Keyboard,5,7995
+2026-03-09,East,Keyboard,8,12792
+2026-03-09,West,Backpack,7,6230
+2026-03-10,North,Notebook,7,840
+2026-03-10,South,Water Bottle,17,5083
+2026-03-10,East,Keyboard,7,11193
+2026-03-10,West,Water Bottle,29,8671
+2026-03-11,North,Water Bottle,18,5382
+2026-03-11,South,Keyboard,14,22386
+2026-03-11,East,Backpack,20,17800
+2026-03-11,West,Water Bottle,7,2093
+2026-03-12,North,Notebook,3,360
+2026-03-12,South,Keyboard,23,36777
+2026-03-12,East,Notebook,19,2280
+2026-03-12,West,Keyboard,7,11193
+2026-03-13,North,Desk Lamp,30,22470
+2026-03-13,South,Backpack,29,25810
+2026-03-13,East,Backpack,3,2670
+2026-03-13,West,Headphones,9,22491
+2026-03-14,North,Headphones,19,47481
+2026-03-14,South,Backpack,27,24030
+2026-03-14,East,Water Bottle,13,3887
+2026-03-14,West,Headphones,20,49980

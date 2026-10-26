@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2, Database, CalendarClock } from 'lucide-react';
+import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2, Database, CalendarClock, FlaskConical, HardDrive } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { workflowApi } from '@/services/api';
+import { workflowApi, PreviewResult } from '@/services/api';
 import { Workflow } from '@/types/workflow';
 import { ExecutionModal } from './ExecutionModal';
 import { LoadWorkflowModal } from './LoadWorkflowModal';
+import { PreviewModal } from './PreviewModal';
 import { useAuthStore } from '@/store/authStore';
 
 export function Toolbar() {
@@ -21,6 +22,7 @@ export function Toolbar() {
     setSelectedNode,
     loadWorkflow,
     clearWorkflow,
+    setPreviewSchemas,
   } = useWorkflowStore();
 
   const { user, logout, setView } = useAuthStore();
@@ -32,6 +34,9 @@ export function Toolbar() {
   const [editingName, setEditingName] = useState(false);
   const [showExecuteModal, setShowExecuteModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
+  const hasDataNodes = nodes.some(n => ['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode'].includes(n.type || ''));
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -88,6 +93,28 @@ export function Toolbar() {
       return await workflowApi.executeWorkflow(workflow.id, inputData);
     } finally {
       setExecuting(false);
+    }
+  };
+
+  // Sample run of the data nodes: shows schema, rows and the generated SQL after every step. Free, no AI/HTTP calls.
+  const handlePreview = async () => {
+    setPreviewing(true);
+    try {
+      const payload = { name: workflowName, description: workflowDescription, graph_data: { nodes, edges } };
+      const workflow = workflowId
+        ? await workflowApi.updateWorkflow(workflowId, payload)
+        : await workflowApi.createWorkflow(payload);
+      if (!workflowId) setWorkflowId(workflow.id);
+      const result = await workflowApi.previewWorkflow(workflow.id);
+      const schemas: Record<string, { name: string; type: string }[]> = {};
+      result.nodes.forEach(n => { if (n.dataset) schemas[n.node_id] = n.dataset.columns.map(c => ({ name: c.name, type: c.type })); });
+      setPreviewSchemas(schemas);
+      setPreviewResult(result);
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      alert(typeof detail === 'string' ? detail : 'Preview failed');
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -162,6 +189,19 @@ export function Toolbar() {
           {saving ? 'Saving…' : workflowId ? 'Update' : 'Save'}
         </button>
 
+        {/* Preview data (only when the canvas has data nodes) */}
+        {hasDataNodes && (
+          <button
+            onClick={handlePreview}
+            disabled={previewing || executing}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium whitespace-nowrap text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 disabled:opacity-50 rounded-md transition-colors"
+            title="Run the data nodes on a small sample and see every step's table and SQL"
+          >
+            <FlaskConical className="w-4 h-4" />
+            {previewing ? 'Previewing…' : 'Preview data'}
+          </button>
+        )}
+
         {/* Execute */}
         <button
           onClick={handleExecute}
@@ -222,7 +262,15 @@ export function Toolbar() {
           </div>
         )}
 
-        {/* Data connections + background runs / schedules */}
+        {/* Files & datasets, connections, background runs / schedules */}
+        <button
+          onClick={() => setView('data')}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          title="Upload files and browse pipeline outputs"
+        >
+          <HardDrive className="w-4 h-4" />
+          Data
+        </button>
         <button
           onClick={() => setView('connections')}
           className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
@@ -284,6 +332,8 @@ export function Toolbar() {
           onRun={handleRun}
         />
       )}
+
+      {previewResult && <PreviewModal result={previewResult} onClose={() => setPreviewResult(null)} />}
 
       {showLoadModal && (
         <LoadWorkflowModal

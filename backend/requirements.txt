@@ -18,3 +18,5 @@ aiohttp==3.9.1
 python-dotenv==1.0.0
 cryptography>=42.0.0
 croniter>=2.0.0
+duckdb>=1.1.0
+pyarrow>=15.0.0,<18

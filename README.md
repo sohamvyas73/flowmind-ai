@@ -56,6 +56,8 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 - **Human-in-the-loop** — pause a workflow mid-execution for manual review before continuing
 - **Token-based credit billing** — AI nodes charge 1 credit per 1,000 tokens consumed; non-AI nodes use flat rates; users who supply their own API key are never charged credits
 - **Admin credit management** — add, subtract, set, or reset credits per user from the admin panel; full raw transaction log with per-execution breakdown
+- **Data pipelines** — load files or database tables, clean, join, summarise or query them with SQL, preview every step for free, and save results (see the [beginner guide](docs/data-pipelines-guide.md))
+- **Background runs, schedules and connections** — async runs with retries, cron schedules, encrypted read-only database connections
 - **Docker Compose** — the entire stack starts with one command
 
 ---
@@ -78,6 +80,11 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 | Switch Router | Violet | Route to N branches by field value (supports OR via `|`) |
 | Formatter | Lime | Template-based output rendering (text, HTML, Markdown, email) |
 | Aggregator | Sky | sum, avg, count, group_by, join, unique over arrays |
+| Load Data | Cyan | Read an uploaded file (CSV/TSV/JSON/JSONL/Parquet) or a PostgreSQL table |
+| Clean | Cyan | Trim, de-duplicate, fill/drop blanks, change case, rename — no SQL needed |
+| Combine | Cyan | Join two tables (inner / left / right / full) |
+| Summarise | Cyan | Group by, then count / sum / average / min / max / median |
+| SQL | Cyan | One sandboxed `SELECT` over the connected tables (DuckDB) |
 
 ---
 
@@ -258,13 +265,18 @@ Full API docs: [docs/api-reference.md](docs/api-reference.md)
 | [Node Reference](docs/nodes.md) | Every node type — config fields, input/output schema, examples |
 | [Use Cases](docs/use-cases.md) | KYC, fraud, loan eligibility, document processing, data pipelines |
 | [Execution Engine](docs/execution-engine.md) | How conditional routing works internally |
+| [Data Pipelines Guide](docs/data-pipelines-guide.md) | **Start here for data**: beginner-friendly tutorials with real example outputs |
+| [Data Engine (technical)](docs/phase2-data-engine.md) | DuckDB isolation, storage, preview, billing, API and configuration |
+| [Foundation: jobs, schedules, connections](docs/phase1-foundation.md) | Job queue, background runs, cron schedules, database connections |
+| [Data & ML Platform Design](docs/data-engineering-platform.md) | The roadmap and architecture for data engineering, RAG and ML |
+| [Security Audit](docs/SECURITY_AUDIT.md) | Findings and how each was addressed |
 | [API Reference](docs/api-reference.md) | All REST endpoints with request/response bodies |
 
 ---
 
 ## Sample Workflows
 
-Five workflows are included and loadable from the Node Palette sidebar:
+Nine workflows are included and loadable from the Node Palette sidebar (the four **Data:** ones need the example files: *Data → Load example data*):
 
 | Name | Nodes used |
 |---|---|
@@ -273,6 +285,10 @@ Five workflows are included and loadable from the Node Palette sidebar:
 | **Document Processing** | Input → AI OCR → AI Classification → Verification → Output |
 | **API Enrichment + Review** | Input → HTTP → Transform → AI → Human Review → Output |
 | **Loan Eligibility** | Input → Validator → Rule Engine → AI → Decision → Formatter → Output |
+| **Data: Tidy up messy contacts** | Load Data → Clean → Summarise |
+| **Data: Sales by region** | Load Data → Summarise |
+| **Data: Orders + customers (join)** | Load Data ×2 → Combine → SQL |
+| **Data: Top products (SQL)** | Load Data → SQL |
 
 ---
 
