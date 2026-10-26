@@ -6,6 +6,7 @@ import { AdminPanel } from './pages/AdminPanel';
 import { ConfigPage } from './pages/ConfigPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { AutomationPage } from './pages/AutomationPage';
+import { DataPage } from './pages/DataPage';
 import { useAuthStore } from './store/authStore';
 import { authApi } from './services/api';
 import { Loader2, Clock, LogOut } from 'lucide-react';
@@ -94,6 +95,10 @@ function App() {
 
   if (activeView === 'automation') {
     return <AutomationPage />;
+  }
+
+  if (activeView === 'data') {
+    return <DataPage />;
   }
 
   return (

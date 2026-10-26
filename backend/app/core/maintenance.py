@@ -92,6 +92,8 @@ def purge_old_executions() -> int:
 
 
 async def retention_loop(interval_s: int = 6 * 3600) -> None:
+    from app.services.dataset_service import purge_expired_datasets
     while True:
         await asyncio.to_thread(purge_old_executions)
+        await asyncio.to_thread(purge_expired_datasets)
         await asyncio.sleep(interval_s)

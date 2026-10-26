@@ -156,6 +156,91 @@ class PostgresConnector(Connector):
         )
 
 
+_ARROW_BY_PG = {
+    "smallint": "int64", "integer": "int64", "bigint": "int64", "real": "float64", "double precision": "float64",
+    "numeric": "float64", "boolean": "bool", "date": "date32", "timestamp without time zone": "timestamp",
+    "timestamp with time zone": "timestamp_tz",
+}
+
+
+def _arrow_type(pg_type: str):
+    import pyarrow as pa
+    kind = _ARROW_BY_PG.get(pg_type, "string")
+    return {
+        "int64": pa.int64(), "float64": pa.float64(), "bool": pa.bool_(), "date32": pa.date32(),
+        "timestamp": pa.timestamp("us"), "timestamp_tz": pa.timestamp("us", tz="UTC"), "string": pa.string(),
+    }[kind], kind
+
+
+def _coerce(value: Any, kind: str) -> Any:
+    if value is None:
+        return None
+    if kind == "float64":
+        return float(value)                      # NUMERIC -> double (precision beyond ~15 digits is lost)
+    if kind == "string" and not isinstance(value, str):
+        return str(value)
+    return value
+
+
+async def stream_table_to_parquet(
+    connector: "PostgresConnector", config: Dict[str, Any], *, access_mode: str, allow_hosts: Iterable[str],
+    schema: str, table: str, columns: Iterable[str], limit: int, out_path: str,
+) -> int:
+    """Copy (a slice of) a table into a Parquet file in bounded memory. Returns the number of rows written."""
+    conn = await connector._connect(config, access_mode, allow_hosts)
+
+    def _work() -> int:
+        import os
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as meta:
+            meta.execute(
+                "SELECT column_name, data_type FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position", (schema, table),
+            )
+            all_cols = meta.fetchall()
+        if not all_cols:
+            raise ConnectorError(f"Table '{schema}.{table}' not found or not accessible")
+        wanted = list(columns)
+        by_name = {c["column_name"]: c["data_type"] for c in all_cols}
+        for w in wanted:
+            if w not in by_name:
+                raise ConnectorError(f"Column '{w}' does not exist in {schema}.{table}")
+        names = wanted or [c["column_name"] for c in all_cols]
+        types = [_arrow_type(by_name[n]) for n in names]
+        arrow_schema = pa.schema([pa.field(n, t[0]) for n, t in zip(names, types)])
+
+        conn.autocommit = False                       # server-side cursors need a transaction (still read-only)
+        query = sql.SQL("SELECT {} FROM {}.{} LIMIT %s").format(
+            sql.SQL(", ").join(sql.Identifier(n) for n in names), sql.Identifier(schema), sql.Identifier(table),
+        )
+        written = 0
+        writer = pq.ParquetWriter(out_path, arrow_schema)
+        try:
+            with conn.cursor(name="fm_stream") as cur:
+                cur.itersize = 20_000
+                cur.execute(query, (limit,))
+                while True:
+                    rows = cur.fetchmany(20_000)
+                    if not rows:
+                        break
+                    cols = [pa.array([_coerce(r[i], types[i][1]) for r in rows], type=types[i][0]) for i in range(len(names))]
+                    writer.write_table(pa.Table.from_arrays(cols, schema=arrow_schema))
+                    written += len(rows)
+        finally:
+            writer.close()
+        return written
+
+    try:
+        return await asyncio.to_thread(_work)
+    except psycopg2.Error as e:
+        raise ConnectorError(_clean_pg_error(e))
+    finally:
+        conn.close()
+
+
 def _clean_pg_error(e: Exception) -> str:
     """User-facing message without leaking credentials or internals."""
     msg = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__

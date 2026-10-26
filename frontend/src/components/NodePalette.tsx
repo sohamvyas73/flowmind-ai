@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine } from 'lucide-react';
+import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2 } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { healthCheck, configApi } from '@/services/api';
@@ -150,6 +150,52 @@ const nodeTypeList: NodeTypeConfig[] = [
     border: 'border-fuchsia-200',
     bg: 'bg-fuchsia-50',
     text: 'text-fuchsia-700',
+  },
+  // ── Data pipeline nodes ──
+  {
+    type: 'loadDataNode',
+    label: 'Load Data',
+    description: 'A file or database table',
+    icon: ({ className }) => <FileSpreadsheet className={className} />,
+    border: 'border-cyan-200',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
+  },
+  {
+    type: 'cleanDataNode',
+    label: 'Clean',
+    description: 'Trim, dedupe, fill blanks',
+    icon: ({ className }) => <Eraser className={className} />,
+    border: 'border-cyan-200',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
+  },
+  {
+    type: 'combineDataNode',
+    label: 'Combine',
+    description: 'Join two tables',
+    icon: ({ className }) => <Merge className={className} />,
+    border: 'border-cyan-200',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
+  },
+  {
+    type: 'summariseDataNode',
+    label: 'Summarise',
+    description: 'Totals, counts, averages',
+    icon: ({ className }) => <Sigma className={className} />,
+    border: 'border-cyan-200',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
+  },
+  {
+    type: 'sqlNode',
+    label: 'SQL',
+    description: 'Write your own query',
+    icon: ({ className }) => <FileCode2 className={className} />,
+    border: 'border-cyan-200',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
   },
 ];
 

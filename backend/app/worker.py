@@ -10,7 +10,7 @@ import signal
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.jobs.runtime import run_background
-from app.models import connection, job, schedule, user, workflow  # noqa: F401  (register tables)
+from app.models import connection, data, job, schedule, user, workflow  # noqa: F401  (register tables)
 
 
 async def _main() -> None:

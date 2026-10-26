@@ -74,7 +74,22 @@ CREDIT_COSTS: Dict[str, int] = {
     "verificationNode": 10,
     "decisionNode": 10,
     "indianKycNode": 15,
+    # Data nodes: flat base; larger scans / long compute add credits (see _data_usage_extra)
+    "loadDataNode": 1,
+    "cleanDataNode": 1,
+    "combineDataNode": 2,
+    "summariseDataNode": 1,
+    "sqlNode": 2,
 }
+
+_DATA_NODES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode"}
+_SCAN_BYTES_PER_CREDIT = 100 * 1024 * 1024     # +1 credit per full 100 MB scanned
+_COMPUTE_SECONDS_PER_CREDIT = 30               # +1 credit per full 30 s of compute
+
+
+def _data_usage_extra(result: Dict[str, Any]) -> int:
+    u = result.get("_usage") or {}
+    return int(u.get("scanned_bytes", 0) // _SCAN_BYTES_PER_CREDIT) + int(u.get("compute_s", 0) // _COMPUTE_SECONDS_PER_CREDIT)
 
 
 _TOKEN_BASED_NODES = {"aiNode", "verificationNode", "decisionNode"}
@@ -141,7 +156,12 @@ def _charge_credits(
             cost = CREDIT_COSTS.get(node_type, 1)
             if cost == 0:
                 continue
-            if node_type == "indianKycNode":
+            if node_type in _DATA_NODES:
+                if "error" in result:
+                    continue                       # a failed data node did no billable work
+                cost += _data_usage_extra(result)
+                desc = f"Data · {node_type.replace('Node', '')} · {int(result.get('row_count') or 0):,} rows"
+            elif node_type == "indianKycNode":
                 desc = f"Indian KYC · {result.get('document_type', '')} · {result.get('provider', '')}"
             elif node_type == "httpNode":
                 desc = f"HTTP {result.get('method', 'GET')} · {(result.get('url') or '')[:60]}"
@@ -315,7 +335,9 @@ async def execute_prepared(execution_id: Any, input_data: Optional[Dict[str, Any
     result: Dict[str, Any] = {}
     error: Optional[str] = None
     try:
-        result = await workflow_executor.execute_workflow(graph, input_data, resolved_keys=resolved_keys)
+        result = await workflow_executor.execute_workflow(
+            graph, input_data, resolved_keys=resolved_keys, user_id=user_id, execution_id=execution_id,
+        )
     except Exception as e:
         error = str(e)
         logger.error("RUN FAILED | execution=%s | %s", execution_id, e, exc_info=True)
@@ -389,3 +411,36 @@ async def on_run_dead(job) -> None:
 
 async def on_run_cancelled(job) -> None:
     abort_execution(job.execution_id, "Cancelled by user", cancelled=True)
+
+
+# ── preview (dry run) ──────────────────────────────────────────────────────────
+
+async def preview_run(user: User, workflow: Workflow, input_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Run the pipeline on a small sample without charging credits or touching AI/HTTP/KYC nodes.
+
+    Returns, per executed node, its status plus the dataset schema/sample and the SQL it compiled to."""
+    limiter.check(f"preview:{user.id}", settings.PREVIEW_RATE_LIMIT_PER_MIN)
+    graph = inject_graph_secrets(workflow.graph_data, load_secrets(workflow.secrets))
+    labels = {n["id"]: (n.get("data") or {}).get("label", n["id"]) for n in graph.get("nodes", [])}
+    result = await workflow_executor.execute_workflow(graph, input_data, user_id=user.id, dry_run=True)
+
+    steps = []
+    for step in result.get("execution_trace") or []:
+        r = step.get("result") or {}
+        item: Dict[str, Any] = {
+            "node_id": step["node_id"], "node_type": step["node_type"], "label": labels.get(step["node_id"]),
+            "status": "error" if "error" in r else "skipped" if r.get("skipped") else "ok",
+        }
+        if "error" in r:
+            item["error"] = r["error"]
+        if r.get("skipped"):
+            item["note"] = r.get("note")
+        if r.get("dataset"):
+            item["dataset"] = r["dataset"]
+            item["sql"] = r.get("sql")
+        steps.append(item)
+    out = {"status": result.get("status", "failed"), "sample_rows": settings.DRY_RUN_ROWS, "nodes": steps}
+    if result.get("status") == "failed":
+        out["error"] = result.get("error")
+        out["failed_node_id"] = result.get("failed_node_id")
+    return redact(out)

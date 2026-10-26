@@ -54,6 +54,9 @@ class ExecutionCreate(BaseModel):
     workflow_id: UUID
     input_data: Optional[Dict[str, Any]] = None
 
+class PreviewRequest(BaseModel):
+    input_data: Optional[Dict[str, Any]] = None
+
 class ExecutionResponse(BaseModel):
     id: UUID
     workflow_id: UUID

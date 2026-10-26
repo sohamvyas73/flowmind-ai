@@ -11,9 +11,9 @@ from app.models.schedule import Schedule
 from app.models.user import User
 from app.schemas.workflow import (
     WorkflowCreate, WorkflowUpdate, WorkflowResponse,
-    ExecutionCreate, ExecutionResponse, TriggerResponse
+    ExecutionCreate, ExecutionResponse, TriggerResponse, PreviewRequest
 )
-from app.services.run_service import get_owned_workflow, prepare_run, execute_prepared
+from app.services.run_service import get_owned_workflow, prepare_run, execute_prepared, preview_run
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -144,6 +144,20 @@ async def execute_workflow(
     workflow = get_owned_workflow(db, workflow_id, current_user)
     execution_id, _ = await _run_inline(db, current_user, workflow, execution_data.input_data, "EXECUTE", "manual")
     return db.query(WorkflowExecution).filter(WorkflowExecution.id == execution_id).first()
+
+
+@router.post("/workflows/{workflow_id}/preview")
+async def preview_workflow(
+    workflow_id: UUID,
+    body: Optional[PreviewRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sample run: data nodes execute on up to DRY_RUN_ROWS rows; no credits, no AI/HTTP/KYC calls."""
+    workflow = get_owned_workflow(db, workflow_id, current_user)
+    user = current_user
+    db.expunge_all()
+    return await preview_run(user, workflow, body.input_data if body else None)
 
 
 @router.post("/workflows/{workflow_id}/trigger", response_model=TriggerResponse)

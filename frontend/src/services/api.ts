@@ -119,6 +119,11 @@ export const workflowApi = {
     return res.data;
   },
 
+  previewWorkflow: async (workflowId: string): Promise<PreviewResult> => {
+    const res = await api.post(`/workflows/workflows/${workflowId}/preview`, {});
+    return res.data;
+  },
+
   getWorkflowExecutions: async (workflowId: string): Promise<WorkflowExecution[]> => {
     const res = await api.get(`/workflows/workflows/${workflowId}/executions`);
     return res.data;
@@ -236,6 +241,7 @@ export interface DatasetColumn { name: string; type: string; nullable: boolean; 
 export interface DatasetRef {
   id: string;
   kind: string;
+  lineage?: { source: string; operation: string }[];
   columns: DatasetColumn[];
   row_count?: number | null;
   row_count_is_estimate: boolean;
@@ -260,6 +266,86 @@ export const connectionsApi = {
     (await api.get(`/connections/${id}/discover`)).data,
   preview: async (id: string, schema: string, table: string): Promise<DatasetRef> =>
     (await api.get(`/connections/${id}/preview`, { params: { schema, table } })).data,
+};
+
+// ── Data: files, datasets, preview (Phase 2) ──────────────────────────────────
+
+export interface DataFile {
+  id: string;
+  name: string;
+  format: string;
+  size_bytes: number;
+  row_count?: number | null;
+  columns?: { name: string; type: string }[] | null;
+  created_at: string;
+}
+
+export interface DatasetInfo {
+  id: string;
+  name?: string | null;
+  size_bytes: number;
+  row_count?: number | null;
+  columns?: { name: string; type: string }[] | null;
+  sql?: string | null;
+  execution_id?: string | null;
+  created_at: string;
+  expires_at?: string | null;
+}
+
+export interface DataUsage {
+  used_bytes: number;
+  limit_bytes: number;
+  files: number;
+  datasets: number;
+  max_upload_bytes: number;
+}
+
+export interface PreviewNode {
+  node_id: string;
+  node_type: string;
+  label?: string | null;
+  status: 'ok' | 'error' | 'skipped';
+  error?: string;
+  note?: string;
+  sql?: string;
+  dataset?: DatasetRef;
+}
+
+export interface PreviewResult {
+  status: string;
+  sample_rows: number;
+  nodes: PreviewNode[];
+  error?: string;
+  failed_node_id?: string;
+}
+
+const saveBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+export const dataApi = {
+  usage: async (): Promise<DataUsage> => (await api.get('/data/usage')).data,
+  listFiles: async (): Promise<DataFile[]> => (await api.get('/data/files')).data,
+  uploadFile: async (file: File): Promise<DataFile> => {
+    const form = new FormData();
+    form.append('file', file);
+    return (await api.post('/data/files', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+  },
+  deleteFile: async (id: string): Promise<void> => { await api.delete(`/data/files/${id}`); },
+  previewFile: async (id: string): Promise<DatasetRef> => (await api.get(`/data/files/${id}/preview`)).data,
+  installExamples: async (): Promise<DataFile[]> => (await api.post('/data/examples')).data,
+  listDatasets: async (): Promise<DatasetInfo[]> => (await api.get('/data/datasets')).data,
+  previewDataset: async (id: string): Promise<DatasetRef> => (await api.get(`/data/datasets/${id}/preview`)).data,
+  deleteDataset: async (id: string): Promise<void> => { await api.delete(`/data/datasets/${id}`); },
+  download: async (id: string, name: string, format: 'csv' | 'parquet'): Promise<void> => {
+    const res = await api.get(`/data/datasets/${id}/download`, { params: { format }, responseType: 'blob' });
+    saveBlob(res.data, `${name.replace(/[^\w.-]+/g, '_') || 'dataset'}.${format}`);
+  },
 };
 
 // ── Runs & schedules (Phase 1: job queue) ──────────────────────────────────────

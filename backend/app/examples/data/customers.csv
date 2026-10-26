@@ -1,0 +1,9 @@
+customer_id,name,email,city,tier
+1,Asha Patel,asha.patel@example.com,Mumbai,gold
+2,Ben Carter,ben.carter@example.com,London,silver
+3,Chloe Dubois,chloe.dubois@example.com,Paris,gold
+4,Dev Sharma,dev.sharma@example.com,Delhi,bronze
+5,Elena Rossi,elena.rossi@example.com,Rome,silver
+6,Farah Khan,farah.khan@example.com,Dubai,gold
+7,Gabe Miller,gabe.miller@example.com,Austin,bronze
+8,Hana Sato,hana.sato@example.com,Tokyo,silver

@@ -16,6 +16,7 @@ if _pg:
 else:
     _db = os.path.join(tempfile.mkdtemp(prefix="fm_test_"), "test.db")
     os.environ["DATABASE_URL"] = f"sqlite:///{_db}"
+os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="fm_data_")
 os.environ["WORKER_ENABLED"] = "false"      # tests drive workers/scheduler explicitly
 os.environ["SCHEDULER_ENABLED"] = "false"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")

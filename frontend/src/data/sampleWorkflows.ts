@@ -343,4 +343,68 @@ export const sampleWorkflows: SampleWorkflow[] = [
       { id: 'e_le_8', source: 'le_6', target: 'le_7' },
     ],
   },
+
+  // ── Data pipeline examples (load the example files first: Data page → "Load example data") ──
+  {
+    name: 'Data: Tidy up messy contacts',
+    description: 'Trim spaces, lowercase emails, drop blanks and duplicates, then count people per city. Needs messy_contacts.csv.',
+    nodes: [
+      { id: 'dc_1', type: 'loadDataNode', position: { x: 60, y: 160 },
+        data: { label: 'Messy contacts', source: 'file', fileName: 'messy_contacts.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'dc_2', type: 'cleanDataNode', position: { x: 300, y: 160 },
+        data: { label: 'Tidy up', trimAll: true, removeDuplicates: true, dropMissing: ['name'],
+                fillMissing: [{ column: 'city', value: 'Unknown' }], rename: [], keepColumns: [],
+                textCase: { columns: ['email'], mode: 'lower' } } },
+      { id: 'dc_3', type: 'summariseDataNode', position: { x: 540, y: 160 },
+        data: { label: 'People per city', groupBy: ['city'], aggregations: [{ column: '*', fn: 'count', as: 'people' }] } },
+    ],
+    edges: [
+      { id: 'dc_e1', source: 'dc_1', target: 'dc_2' },
+      { id: 'dc_e2', source: 'dc_2', target: 'dc_3' },
+    ],
+  },
+  {
+    name: 'Data: Sales by region',
+    description: 'Total revenue and units per region from the daily sales file. Needs sales.csv.',
+    nodes: [
+      { id: 'ds_1', type: 'loadDataNode', position: { x: 60, y: 160 },
+        data: { label: 'Daily sales', source: 'file', fileName: 'sales.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'ds_2', type: 'summariseDataNode', position: { x: 300, y: 160 },
+        data: { label: 'Revenue by region', groupBy: ['region'], aggregations: [
+          { column: 'revenue', fn: 'sum', as: 'total_revenue' }, { column: 'units', fn: 'sum', as: 'total_units' } ] } },
+    ],
+    edges: [{ id: 'ds_e1', source: 'ds_1', target: 'ds_2' }],
+  },
+  {
+    name: 'Data: Orders + customers (join)',
+    description: 'Combine two tables on customer_id, then total spend per customer tier. Needs orders.csv and customers.csv.',
+    nodes: [
+      { id: 'dj_1', type: 'loadDataNode', position: { x: 60, y: 80 },
+        data: { label: 'Orders', source: 'file', fileName: 'orders.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'dj_2', type: 'loadDataNode', position: { x: 60, y: 260 },
+        data: { label: 'Customers', source: 'file', fileName: 'customers.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'dj_3', type: 'combineDataNode', position: { x: 300, y: 170 },
+        data: { label: 'Orders with customer', joinType: 'inner', keys: [{ left: 'customer_id', right: 'customer_id' }], swap: false } },
+      { id: 'dj_4', type: 'sqlNode', position: { x: 540, y: 170 },
+        data: { label: 'Spend per tier', query:
+          "SELECT tier,\n       count(*) AS orders,\n       round(sum(quantity * unit_price), 2) AS revenue\nFROM input\nWHERE status <> 'cancelled'\nGROUP BY tier\nORDER BY revenue DESC" } },
+    ],
+    edges: [
+      { id: 'dj_e1', source: 'dj_1', target: 'dj_3' },
+      { id: 'dj_e2', source: 'dj_2', target: 'dj_3' },
+      { id: 'dj_e3', source: 'dj_3', target: 'dj_4' },
+    ],
+  },
+  {
+    name: 'Data: Top products (SQL)',
+    description: 'A single SQL query for engineers: best-selling products by revenue. Needs orders.csv.',
+    nodes: [
+      { id: 'dq_1', type: 'loadDataNode', position: { x: 60, y: 160 },
+        data: { label: 'Orders', source: 'file', fileName: 'orders.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'dq_2', type: 'sqlNode', position: { x: 300, y: 160 },
+        data: { label: 'Top products', query:
+          "SELECT product,\n       sum(quantity) AS units,\n       sum(quantity * unit_price) AS revenue\nFROM orders\nWHERE status = 'delivered'\nGROUP BY product\nORDER BY revenue DESC\nLIMIT 5" } },
+    ],
+    edges: [{ id: 'dq_e1', source: 'dq_1', target: 'dq_2' }],
+  },
 ];

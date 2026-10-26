@@ -67,3 +67,6 @@ htmlcov/
 # Build
 *.pyc
 *.pyo
+
+# Local data storage (uploads + materialised datasets)
+backend/data/
