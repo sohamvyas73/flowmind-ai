@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import (
     hash_password, verify_password, create_access_token,
-    generate_api_token, get_current_user,
+    generate_api_token, get_current_user, get_current_user_allow_inactive,
 )
 from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, TokenResponse, UserResponse
@@ -35,7 +35,7 @@ async def signup(data: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == data.email, User.is_active == True).first()
+    user = db.query(User).filter(User.email == data.email).first()
     if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
@@ -45,7 +45,7 @@ async def login(data: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(current_user: User = Depends(get_current_user_allow_inactive)):
     return UserResponse.model_validate(current_user)
 
 

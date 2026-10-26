@@ -10,6 +10,12 @@ from app.core.config import settings
 router = APIRouter()
 
 
+@router.get("/features")
+async def get_features(current_user: User = Depends(get_current_user)):
+    """Server-side feature flags the UI needs (e.g. hide Code Runner when disabled)."""
+    return {"code_node_enabled": settings.ENABLE_CODE_NODE}
+
+
 class UserConfigUpdate(BaseModel):
     openai_api_key: Optional[str] = None
     openai_model: Optional[str] = None

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { healthCheck } from '@/services/api';
+import { healthCheck, configApi } from '@/services/api';
 import { sampleWorkflows, SampleWorkflow } from '@/data/sampleWorkflows';
 
 interface NodeTypeConfig {
@@ -160,6 +160,15 @@ export function NodePalette() {
   const { fitView } = useReactFlow();
   const [status, setStatus] = useState<BackendStatus>('checking');
 
+  // Hide nodes the server has disabled (Code Runner is off unless ENABLE_CODE_NODE=true)
+  const [codeNodeEnabled, setCodeNodeEnabled] = useState(false);
+  useEffect(() => {
+    configApi.getFeatures()
+      .then(f => setCodeNodeEnabled(f.code_node_enabled))
+      .catch(() => setCodeNodeEnabled(false));
+  }, []);
+  const visibleNodes = nodeTypeList.filter(n => n.type !== 'codeNode' || codeNodeEnabled);
+
   useEffect(() => {
     const check = async () => {
       const online = await healthCheck();
@@ -211,7 +220,7 @@ export function NodePalette() {
           <p className="text-xs font-semibold text-gray-700 mb-1">Node Library</p>
           <p className="text-xs text-gray-400 mb-3">Drag nodes onto the canvas</p>
           <div className="space-y-1.5">
-            {nodeTypeList.map(({ type, label: nodeLabel, description, icon: Icon, border, bg, text: nodeText }) => (
+            {visibleNodes.map(({ type, label: nodeLabel, description, icon: Icon, border, bg, text: nodeText }) => (
               <div
                 key={type}
                 draggable

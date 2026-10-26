@@ -164,7 +164,16 @@ export interface PlatformSettings {
   gemini: PlatformProviderConfig;
 }
 
+export interface ServerFeatures {
+  code_node_enabled: boolean;
+}
+
 export const configApi = {
+  getFeatures: async (): Promise<ServerFeatures> => {
+    const res = await api.get('/config/features');
+    return res.data;
+  },
+
   getMyConfig: async (): Promise<UserConfig> => {
     const res = await api.get('/config/me');
     return res.data;

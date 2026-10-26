@@ -77,6 +77,31 @@ def _seed_admin():
 
 _seed_admin()
 
+
+def _warn_disabled_code_nodes():
+    """Tell operators which saved workflows contain a Code Runner node that is now skipped."""
+    if settings.ENABLE_CODE_NODE:
+        return
+    from app.models.workflow import Workflow
+    db = SessionLocal()
+    try:
+        affected = [
+            w.name for w in db.query(Workflow).all()
+            if any(n.get("type") == "codeNode" for n in (w.graph_data or {}).get("nodes", []))
+        ]
+        if affected:
+            logger.warning(
+                "ENABLE_CODE_NODE=false: %d saved workflow(s) contain a Code Runner node that will be skipped: %s",
+                len(affected), ", ".join(affected[:20]),
+            )
+    except Exception as e:
+        logger.warning("Code node audit skipped: %s", e)
+    finally:
+        db.close()
+
+
+_warn_disabled_code_nodes()
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
