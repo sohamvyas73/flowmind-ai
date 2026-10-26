@@ -6,7 +6,7 @@ from app.core.auth import (
     hash_password, verify_password, create_access_token,
     generate_api_token, set_api_token, get_current_user, get_current_user_allow_inactive,
 )
-from app.core.ratelimit import limiter, limit_auth, client_ip
+from app.core.ratelimit import limiter, limit_auth
 from app.core.config import settings
 from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, TokenResponse, UserResponse

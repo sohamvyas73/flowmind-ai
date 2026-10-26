@@ -394,3 +394,28 @@ async def admin_list_workflows(
             "updated_at": wf.updated_at.isoformat() if wf.updated_at else None,
         })
     return result
+
+
+# ── Background jobs ────────────────────────────────────────────────────────────
+
+@router.get("/jobs/stats")
+async def jobs_stats(_=Depends(get_admin_user)):
+    from app.jobs.queue import queue
+    return queue.stats()
+
+
+@router.get("/jobs")
+async def list_jobs(state: str = "dead_lettered", limit: int = 50, db: Session = Depends(get_db), _=Depends(get_admin_user)):
+    from app.models.job import Job
+    rows = (
+        db.query(Job).filter(Job.state == state).order_by(Job.created_at.desc()).limit(min(max(limit, 1), 200)).all()
+    )
+    return [
+        {
+            "id": str(j.id), "kind": j.kind, "state": j.state, "attempts": j.attempts,
+            "max_attempts": j.max_attempts, "last_error": j.last_error,
+            "execution_id": str(j.execution_id) if j.execution_id else None,
+            "created_at": j.created_at.isoformat() if j.created_at else None,
+        }
+        for j in rows
+    ]

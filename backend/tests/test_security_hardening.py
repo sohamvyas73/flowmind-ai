@@ -229,7 +229,7 @@ class CreditsAndExecutionTests(TestCase):
     def test_reservation_refunded_when_executor_crashes(self):
         email, _, h = _signup(credits=10)
         wid = self._create(h)
-        with patch("app.api.workflows.workflow_executor.execute_workflow", side_effect=RuntimeError("boom")):
+        with patch("app.services.run_service.workflow_executor.execute_workflow", side_effect=RuntimeError("boom")):
             r = client.post(f"/api/v1/workflows/workflows/{wid}/execute", json={"workflow_id": wid, "input_data": {}}, headers=h)
         self.assertEqual(r.json()["status"], "failed")
         self.assertEqual(self._used(email), 0)
@@ -238,7 +238,7 @@ class CreditsAndExecutionTests(TestCase):
         email, body, h = _signup(credits=10)
         wid = self._create(h)
         fake = {"status": "completed", "execution_trace": [], "final_output": {"apiKey": "live-value", "ok": 1}}
-        with patch("app.api.workflows.workflow_executor.execute_workflow", return_value=fake):
+        with patch("app.services.run_service.workflow_executor.execute_workflow", return_value=fake):
             r = client.post(f"/api/v1/workflows/workflows/{wid}/trigger", json={"x": 1}, headers=h)
         self.assertEqual(r.json()["output"]["apiKey"], "live-value")
         ex = client.get(f"/api/v1/workflows/executions/{r.json()['execution_id']}", headers=h).json()
@@ -381,7 +381,7 @@ class MaintenanceTests(TestCase):
         email = f"legacy{time.time_ns()}@example.com"
         db.execute(text(
             "INSERT INTO users (id, email, hashed_password, role, api_token, credits_total, credits_used, is_active, openai_api_key, created_at, updated_at) "
-            "VALUES (:id, :e, 'x', 'USER', :t, 100, 0, 1, 'sk-legacy-plain', :n, :n)"
+            "VALUES (:id, :e, 'x', 'USER', :t, 100, 0, true, 'sk-legacy-plain', :n, :n)"
         ), {"id": "a" * 32, "e": email, "t": "f" * 64, "n": datetime.utcnow()})
         wf_id = "b" * 32
         import json

@@ -1,6 +1,6 @@
 # FlowMind Data Engineering & ML Platform — Design
 
-> Status: **Proposed design** (no implementation yet). Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
+> Status: **Design** — Phase 1 is implemented, see [phase1-foundation.md](phase1-foundation.md). Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 > Related: [architecture.md](architecture.md) · [execution-engine.md](execution-engine.md) · [nodes.md](nodes.md) · [SECURITY_AUDIT.md](SECURITY_AUDIT.md)
 
 ---

@@ -6,7 +6,7 @@ import {
   Settings, Eye, EyeOff, Save, Cpu, UserCheck, Clock, Plus, Minus,
   List, PieChart, RotateCcw, Edit3,
 } from 'lucide-react';
-import { adminApi, AdminUser, CreditBreakdown, RawCreditRow, ConnectorUsage, AdminWorkflow, PlatformSettings } from '@/services/api';
+import { adminApi, JobStats, AdminUser, CreditBreakdown, RawCreditRow, ConnectorUsage, AdminWorkflow, PlatformSettings } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 
 type Section = 'overview' | 'users' | 'credits' | 'connectors' | 'workflows' | 'platform';
@@ -57,7 +57,11 @@ function Badge({ label, color }: { label: string; color: string }) {
 
 function OverviewSection() {
   const [stats, setStats] = useState<any>(null);
-  useEffect(() => { adminApi.getStats().then(setStats); }, []);
+  const [jobs, setJobs] = useState<JobStats | null>(null);
+  useEffect(() => {
+    adminApi.getStats().then(setStats);
+    adminApi.getJobStats().then(setJobs).catch(() => setJobs(null));
+  }, []);
   if (!stats) return <Spinner />;
 
   return (
@@ -71,6 +75,29 @@ function OverviewSection() {
           sub={`${stats.total_credits_remaining?.toLocaleString() ?? '—'} remaining across all users`}
           icon={CreditCard} color="bg-amber-100 text-amber-600" />
       </div>
+
+      {jobs && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-500" /> Background Jobs
+            {jobs.oldest_queued_age_s > 60 && (
+              <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                oldest queued job waiting {Math.round(jobs.oldest_queued_age_s / 60)} min — is a worker running?
+              </span>
+            )}
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+            {(['queued', 'running', 'succeeded', 'cancelled', 'dead_lettered'] as const).map(k => (
+              <div key={k} className="rounded-lg bg-gray-50 py-2">
+                <p className={`text-lg font-semibold ${k === 'dead_lettered' && jobs.counts[k] > 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                  {jobs.counts[k]}
+                </p>
+                <p className="text-xs text-gray-500">{k.replace('_', ' ')}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-5">

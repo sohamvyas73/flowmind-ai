@@ -1,5 +1,4 @@
-import asyncio
-from unittest import IsolatedAsyncioTestCase, TestCase
+from unittest import IsolatedAsyncioTestCase
 from unittest.mock import patch
 
 from fastapi import HTTPException

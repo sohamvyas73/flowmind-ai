@@ -9,11 +9,17 @@ from app.api import workflows
 from app.api import auth as auth_router
 from app.api import admin as admin_router
 from app.api import config as config_router
+from app.api import connections as connections_router
+from app.api import runs as runs_router
+from app.api import schedules as schedules_router
 from app.core import maintenance
 
 # Register all models with Base before create_all
 from app.models import workflow as _wf_models  # noqa: F401
 from app.models import user as _user_models    # noqa: F401
+from app.models import job as _job_models      # noqa: F401
+from app.models import schedule as _schedule_models  # noqa: F401
+from app.models import connection as _connection_models  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,15 +53,24 @@ _MIGRATIONS = [
     "ALTER TABLE platform_settings ALTER COLUMN anthropic_api_key TYPE TEXT;",
     "ALTER TABLE platform_settings ALTER COLUMN gemini_api_key TYPE TEXT;",
     "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS secrets TEXT;",
+    # Phase 1: async runs
+    "ALTER TABLE workflow_executions ADD COLUMN IF NOT EXISTS triggered_by VARCHAR(20) NOT NULL DEFAULT 'manual';",
+    "ALTER TABLE workflow_executions ADD COLUMN IF NOT EXISTS schedule_id UUID;",
+    "ALTER TABLE workflow_executions ADD COLUMN IF NOT EXISTS billed_user_id UUID;",
+    "ALTER TABLE workflow_executions ADD COLUMN IF NOT EXISTS reserved_credits INTEGER NOT NULL DEFAULT 0;",
 ]
 
-for _sql in _MIGRATIONS:
-    try:
-        with engine.connect() as conn:
-            conn.execute(text(_sql))
-            conn.commit()
-    except Exception as e:
-        logger.warning("Migration skipped: %s | %s", _sql[:60], e)
+def run_migrations(target_engine=engine) -> None:
+    for _sql in _MIGRATIONS:
+        try:
+            with target_engine.connect() as conn:
+                conn.execute(text(_sql))
+                conn.commit()
+        except Exception as e:
+            logger.warning("Migration skipped: %s | %s", _sql[:60], e)
+
+
+run_migrations()
 
 
 def _seed_admin():
@@ -139,12 +154,34 @@ app.add_middleware(
 app.include_router(auth_router.router,   prefix=f"{settings.API_V1_STR}/auth",      tags=["auth"])
 app.include_router(admin_router.router,  prefix=f"{settings.API_V1_STR}/admin",     tags=["admin"])
 app.include_router(config_router.router, prefix=f"{settings.API_V1_STR}/config",    tags=["config"])
+app.include_router(connections_router.router, prefix=f"{settings.API_V1_STR}/connections", tags=["connections"])
+app.include_router(runs_router.router,      prefix=f"{settings.API_V1_STR}/runs",        tags=["runs"])
+app.include_router(schedules_router.router, prefix=f"{settings.API_V1_STR}/schedules",   tags=["schedules"])
 app.include_router(workflows.router,     prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"])
 
 
 @app.on_event("startup")
-async def _start_retention() -> None:
+async def _start_background() -> None:
+    from app.jobs.runtime import run_background
+
     app.state.retention_task = asyncio.create_task(maintenance.retention_loop())
+    app.state.stop_event = asyncio.Event()
+    if settings.WORKER_ENABLED or settings.SCHEDULER_ENABLED:
+        app.state.background_task = asyncio.create_task(
+            run_background(app.state.stop_event, worker=settings.WORKER_ENABLED, sched=settings.SCHEDULER_ENABLED)
+        )
+
+
+@app.on_event("shutdown")
+async def _stop_background() -> None:
+    app.state.stop_event.set()
+    task = getattr(app.state, "background_task", None)
+    if task:
+        try:
+            await asyncio.wait_for(task, timeout=35)
+        except Exception:
+            task.cancel()
+    app.state.retention_task.cancel()
 
 
 @app.get("/")
