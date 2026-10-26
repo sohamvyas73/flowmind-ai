@@ -5,7 +5,7 @@ from sqlalchemy import func
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 from app.core.database import get_db
-from app.core.auth import get_admin_user, generate_api_token, hash_password
+from app.core.auth import get_admin_user, generate_api_token, set_api_token, hash_password
 from app.models.user import User, CreditUsage, UserRole, PlatformSetting
 from app.models.workflow import Workflow, WorkflowExecution, ExecutionStatus
 
@@ -108,7 +108,7 @@ async def list_users(
             "email": user.email,
             "full_name": user.full_name,
             "role": user.role,
-            "api_token": user.api_token,
+            "api_token_prefix": user.api_token_prefix,
             "credits_total": user.credits_total,
             "credits_used": user.credits_used,
             "credits_remaining": user.credits_total - user.credits_used,
@@ -166,9 +166,11 @@ async def reset_user_api_token(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user.api_token = generate_api_token()
+    token = generate_api_token()
+    set_api_token(user, token)
     db.commit()
-    return {"api_token": user.api_token}
+    # Plaintext is shown once; only its hash is stored
+    return {"api_token": token}
 
 
 @router.get("/credit-usage")

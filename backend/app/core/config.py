@@ -22,6 +22,17 @@ class Settings(BaseSettings):
 
     # Code Runner executes user Python in-process; enable only in a trusted/sandboxed deployment.
     ENABLE_CODE_NODE: bool = False
+    # Key used to encrypt provider keys / node secrets at rest (falls back to SECRET_KEY)
+    ENCRYPTION_KEY: Optional[str] = None
+    # SSRF guard for HTTP/KYC nodes; only enable for local development against private services
+    ALLOW_PRIVATE_URLS: bool = False
+    # In-memory rate limits (per process, per minute)
+    AUTH_RATE_LIMIT_PER_MIN: int = 10
+    TRIGGER_RATE_LIMIT_PER_MIN: int = 60
+    # 0 = static API tokens never expire; otherwise tokens older than this must be rotated
+    API_TOKEN_TTL_DAYS: int = 0
+    # Execution traces/inputs/outputs older than this are purged (0 = keep forever)
+    EXECUTION_RETENTION_DAYS: int = 30
 
     ADMIN_EMAIL: Optional[str] = None
     ADMIN_PASSWORD: Optional[str] = None

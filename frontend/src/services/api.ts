@@ -41,6 +41,8 @@ export interface TokenResponse {
   access_token: string;
   token_type: string;
   user: AuthUser;
+  /** Plaintext API token, present only on signup / rotation. */
+  api_token?: string | null;
 }
 
 export const authApi = {
@@ -59,7 +61,7 @@ export const authApi = {
     return res.data;
   },
 
-  refreshApiToken: async (): Promise<AuthUser> => {
+  refreshApiToken: async (): Promise<TokenResponse> => {
     const res = await api.post('/auth/refresh-api-token');
     return res.data;
   },
@@ -255,7 +257,7 @@ export interface AdminUser {
   email: string;
   full_name?: string;
   role: string;
-  api_token: string;
+  api_token_prefix?: string | null;
   credits_total: number;
   credits_used: number;
   credits_remaining: number;

@@ -3,6 +3,9 @@ import { useWorkflowStore } from '@/store/workflowStore';
 import { InputField } from '@/types/workflow';
 import { X, Plus } from 'lucide-react';
 
+// Placeholder the server returns for stored node secrets (API keys / auth values)
+const SECRET_SENTINEL = '__secret__';
+
 // ── Type helpers ───────────────────────────────────────────────────────────────
 type Row = Record<string, string>;
 
@@ -326,8 +329,9 @@ export function NodePropertiesPanel() {
                   </Field>
                 )}
                 <Field label={data.authType === 'bearer' ? 'Bearer Token' : 'API Key Value'}>
-                  <input type="password" value={(data.authValue as string) || ''}
-                    onChange={e => up('authValue', e.target.value)} placeholder="••••••••" className={fi} />
+                  <input type="password" value={data.authValue === SECRET_SENTINEL ? '' : ((data.authValue as string) || '')}
+                    onChange={e => up('authValue', e.target.value)}
+                    placeholder={data.authValue === SECRET_SENTINEL ? '•••••••• saved — type to replace' : '••••••••'} className={fi} />
                 </Field>
               </>
             )}
@@ -727,9 +731,9 @@ export function NodePropertiesPanel() {
               </Field>
             )}
             <Field label="API Key">
-              <input type="password" value={(data.apiKey as string) || ''}
+              <input type="password" value={data.apiKey === SECRET_SENTINEL ? '' : ((data.apiKey as string) || '')}
                 onChange={e => up('apiKey', e.target.value)}
-                placeholder="••••••••" className={fi} />
+                placeholder={data.apiKey === SECRET_SENTINEL ? '•••••••• saved — type to replace' : '••••••••'} className={fi} />
               <p className="text-xs text-gray-400 mt-1">Your {(data.provider as string) || 'provider'} API key.</p>
             </Field>
             <Field label="Document Number Field">
@@ -742,7 +746,7 @@ export function NodePropertiesPanel() {
             </Field>
             <div className="text-xs text-fuchsia-700 bg-fuchsia-50 p-2 rounded border border-fuchsia-100 space-y-1">
               <p className="font-medium">Verified output fields:</p>
-              <p className="font-mono text-fuchsia-600">verified, document_type, document_number, kyc_data.name, kyc_data.dob, kyc_data.address, raw_response</p>
+              <p className="font-mono text-fuchsia-600">verified, document_type, document_number, kyc_data.name, kyc_data.dob, kyc_data.address</p>
             </div>
           </>
         )}

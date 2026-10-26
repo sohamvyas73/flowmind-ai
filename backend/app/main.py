@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,7 @@ from app.api import workflows
 from app.api import auth as auth_router
 from app.api import admin as admin_router
 from app.api import config as config_router
+from app.core import maintenance
 
 # Register all models with Base before create_all
 from app.models import workflow as _wf_models  # noqa: F401
@@ -32,6 +34,19 @@ _MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS anthropic_model VARCHAR(100);",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255);",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS gemini_model VARCHAR(100);",
+    # Secrets hardening: hashed API tokens, encrypted provider keys, node-secret vault
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS api_token_hash VARCHAR(64);",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS api_token_prefix VARCHAR(12);",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS api_token_created_at TIMESTAMP;",
+    "ALTER TABLE users ALTER COLUMN api_token DROP NOT NULL;",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_api_token_hash ON users (api_token_hash);",
+    "ALTER TABLE users ALTER COLUMN openai_api_key TYPE TEXT;",
+    "ALTER TABLE users ALTER COLUMN anthropic_api_key TYPE TEXT;",
+    "ALTER TABLE users ALTER COLUMN gemini_api_key TYPE TEXT;",
+    "ALTER TABLE platform_settings ALTER COLUMN openai_api_key TYPE TEXT;",
+    "ALTER TABLE platform_settings ALTER COLUMN anthropic_api_key TYPE TEXT;",
+    "ALTER TABLE platform_settings ALTER COLUMN gemini_api_key TYPE TEXT;",
+    "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS secrets TEXT;",
 ]
 
 for _sql in _MIGRATIONS:
@@ -45,7 +60,7 @@ for _sql in _MIGRATIONS:
 
 def _seed_admin():
     from app.models.user import User, UserRole
-    from app.core.auth import hash_password, generate_api_token
+    from app.core.auth import hash_password, generate_api_token, set_api_token
 
     admin_email = getattr(settings, "ADMIN_EMAIL", None)
     admin_password = getattr(settings, "ADMIN_PASSWORD", None)
@@ -55,15 +70,16 @@ def _seed_admin():
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.email == admin_email).first():
-            db.add(User(
+            admin_user = User(
                 email=admin_email,
                 hashed_password=hash_password(admin_password),
                 full_name="Admin",
                 role=UserRole.ADMIN,
-                api_token=generate_api_token(),
                 credits_total=999_999,
                 is_active=True,
-            ))
+            )
+            set_api_token(admin_user, generate_api_token())
+            db.add(admin_user)
             db.commit()
             logger.info("Admin user created: %s", admin_email)
         else:
@@ -75,7 +91,11 @@ def _seed_admin():
     finally:
         db.close()
 
+maintenance.migrate_secrets()
 _seed_admin()
+
+if settings.SECRET_KEY == "your-secret-key-change-in-production":
+    logger.warning("SECRET_KEY is the insecure default — set a strong SECRET_KEY (also used to encrypt stored keys unless ENCRYPTION_KEY is set)")
 
 
 def _warn_disabled_code_nodes():
@@ -120,6 +140,11 @@ app.include_router(auth_router.router,   prefix=f"{settings.API_V1_STR}/auth",  
 app.include_router(admin_router.router,  prefix=f"{settings.API_V1_STR}/admin",     tags=["admin"])
 app.include_router(config_router.router, prefix=f"{settings.API_V1_STR}/config",    tags=["config"])
 app.include_router(workflows.router,     prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"])
+
+
+@app.on_event("startup")
+async def _start_retention() -> None:
+    app.state.retention_task = asyncio.create_task(maintenance.retention_loop())
 
 
 @app.get("/")

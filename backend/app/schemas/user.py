@@ -7,7 +7,7 @@ from uuid import UUID
 
 class UserCreate(BaseModel):
     email: str
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=8, max_length=72)
     full_name: Optional[str] = None
 
     @field_validator("email")
@@ -34,7 +34,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: Optional[str]
     role: str
-    api_token: str
+    api_token_prefix: Optional[str] = None
     credits_total: int
     credits_used: int
     is_active: bool
@@ -48,6 +48,8 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+    # Plaintext API token, returned ONCE (signup / rotation); only a hash is stored
+    api_token: Optional[str] = None
 
 
 class CreditUsageResponse(BaseModel):

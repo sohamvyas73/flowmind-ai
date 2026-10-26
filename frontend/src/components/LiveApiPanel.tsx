@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Copy, Check, Send, Loader2, Zap, Upload, FileText, Database, Key } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { workflowApi } from '@/services/api';
+import { workflowApi, authApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { InputField } from '@/types/workflow';
 import { Node } from 'reactflow';
@@ -45,7 +45,8 @@ interface FieldState {
 
 export function LiveApiPanel() {
   const { workflowId, nodes, setShowLivePanel } = useWorkflowStore();
-  const { user } = useAuthStore();
+  const { user, revealedApiToken, setRevealedApiToken, updateUser } = useAuthStore();
+  const [rotating, setRotating] = useState(false);
 
   const inputNodes = nodes.filter(n => n.type === 'inputNode');
 
@@ -125,7 +126,19 @@ export function LiveApiPanel() {
   };
 
   const curlBody = JSON.stringify(buildDisplayBody(), null, 2);
-  const apiToken = user?.api_token ?? '<your-api-token>';
+  const apiToken = revealedApiToken ?? '<your-api-token>';
+
+  const rotateToken = async () => {
+    if (!window.confirm('Generate a new API token? The current token stops working immediately.')) return;
+    setRotating(true);
+    try {
+      const res = await authApi.refreshApiToken();
+      updateUser(res.user);
+      setRevealedApiToken(res.api_token ?? null);
+    } finally {
+      setRotating(false);
+    }
+  };
   const curlSnippet = endpoint
     ? `curl -X POST "${endpoint}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${apiToken}" \\\n  -d '${curlBody.replace(/\n/g, '\n       ')}'`
     : '';
@@ -216,24 +229,37 @@ export function LiveApiPanel() {
               </div>
             </div>
 
-            {/* API Token */}
+            {/* API Token — only a hash is stored server-side, so the full token is shown once */}
             {user && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Your API Token</p>
                 <div className="flex items-center gap-2 bg-gray-900 rounded-lg px-3 py-2">
                   <Key className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />
                   <span className="text-xs text-gray-300 flex-1 truncate font-mono">
-                    {user.api_token.slice(0, 16)}…
+                    {revealedApiToken ?? `${user.api_token_prefix ?? '••••••••'}…  (hidden)`}
                   </span>
+                  {revealedApiToken && (
+                    <button
+                      onClick={() => copy(revealedApiToken, 'url')}
+                      className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                      title="Copy API token"
+                    >
+                      {copied === 'url' ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
                   <button
-                    onClick={() => copy(user.api_token, 'url')}
-                    className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
-                    title="Copy API token"
+                    onClick={rotateToken}
+                    disabled={rotating}
+                    className="text-xs text-yellow-400 hover:text-yellow-300 flex-shrink-0 disabled:opacity-50"
                   >
-                    {copied === 'url' ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {rotating ? 'Generating…' : 'Regenerate'}
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Include this token in the Authorization header to authenticate your requests.</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {revealedApiToken
+                    ? 'Copy this token now — it is shown only once and cannot be viewed again.'
+                    : 'For security the full token is not stored. Regenerate to get a new one (the old one stops working).'}
+                </p>
               </div>
             )}
 
