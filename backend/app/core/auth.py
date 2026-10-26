@@ -32,7 +32,7 @@ def generate_api_token() -> str:
     return secrets.token_hex(32)
 
 
-async def get_current_user(
+async def get_current_user_allow_inactive(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ):
@@ -52,14 +52,14 @@ async def get_current_user(
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id:
-            user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+            user = db.query(User).filter(User.id == user_id).first()
             if user:
                 return user
     except JWTError:
         pass
 
     # Fall back to static API token
-    user = db.query(User).filter(User.api_token == token, User.is_active == True).first()
+    user = db.query(User).filter(User.api_token == token).first()
     if user:
         return user
 
@@ -68,6 +68,13 @@ async def get_current_user(
         detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def get_current_user(user=Depends(get_current_user_allow_inactive)):
+    """Authenticated AND approved user. Inactive accounts get 403 (not 401) so clients can show a pending-approval state."""
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not yet activated. Please contact your admin.")
+    return user
 
 
 async def get_admin_user(current_user=Depends(get_current_user)):

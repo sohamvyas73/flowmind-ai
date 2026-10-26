@@ -838,6 +838,16 @@ class NodeExecutor:
         timeout_s = int(node_data.get("timeout", 10))
         previous_output = context.get("previous_output", {})
 
+        if not settings.ENABLE_CODE_NODE:
+            logger.warning("[code_node] node=%s | skipped: ENABLE_CODE_NODE=false", node_id)
+            return {
+                "output": previous_output,
+                "executed": False,
+                "skipped": True,
+                "warning": "Code Runner is disabled on this server (ENABLE_CODE_NODE=false); node skipped and input passed through unchanged.",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
         logger.info("[code_node] node=%s | lines=%d timeout=%ds", node_id, code.count("\n") + 1, timeout_s)
 
         safe_builtins: Dict[str, Any] = {
