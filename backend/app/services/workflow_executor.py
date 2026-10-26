@@ -9,6 +9,8 @@ import httpx
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from app.core.config import settings
+from app.core.url_safety import safe_request, UnsafeURLError
+from app.services import code_sandbox
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,26 @@ def _safe_value(v: Any) -> Any:
     if isinstance(v, list):
         return [_safe_value(item) for item in v]
     return v
+
+
+def _parse_json_object(text: str) -> Optional[Dict[str, Any]]:
+    """Extract a JSON object from model output (tolerates ```json fences / surrounding prose)."""
+    if not text:
+        return None
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        parts = candidate.split("```")
+        candidate = parts[1] if len(parts) > 1 else candidate
+        if candidate.lstrip().startswith("json"):
+            candidate = candidate.lstrip()[4:]
+    for attempt in (candidate.strip(), candidate[candidate.find("{"): candidate.rfind("}") + 1]):
+        try:
+            parsed = json.loads(attempt)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, TypeError):
+            continue
+    return None
 
 
 def _safe_result(result: Any) -> Any:
@@ -237,23 +259,14 @@ class NodeExecutor:
             system_prompt += format_instructions[output_format]
         messages = self._build_messages(system_prompt, prompt, input_data)
 
-        logger.info(
-            "[ai_node] node=%s | MODEL INPUT ↓\n%s",
-            node_id,
-            json.dumps(_safe_messages(messages), indent=2, ensure_ascii=False),
-        )
+        logger.info("[ai_node] node=%s | model call | messages=%d", node_id, len(messages))
 
         t0 = time.time()
         try:
             response = await asyncio.to_thread(llm.invoke, messages)
             elapsed = time.time() - t0
 
-            logger.info(
-                "[ai_node] node=%s | MODEL OUTPUT ↓ (%.2fs)\n%s",
-                node_id,
-                elapsed,
-                response.content,
-            )
+            logger.info("[ai_node] node=%s | model output | %.2fs chars=%d", node_id, elapsed, len(response.content or ""))
 
             result_value: Any = response.content
             if output_format in ("json", "custom_schema"):
@@ -304,40 +317,44 @@ class NodeExecutor:
 
         system_prompt = (
             f"You are a verification agent. Perform {verification_type} verification. "
-            "Provide: 1) result (pass/fail), 2) confidence score (0-1), "
-            "3) issues found, 4) recommendations."
+            "Respond with ONLY valid JSON, no markdown: "
+            '{"result": "pass" or "fail", "confidence": <float 0-1>, '
+            '"issues": ["..."], "recommendations": ["..."], "analysis": "<short explanation>"}'
         )
         user_prompt = f"Verify the following data for {verification_type}:"
         messages = self._build_messages(system_prompt, user_prompt, input_data)
 
-        logger.info(
-            "[verification_node] node=%s | MODEL INPUT ↓\n%s",
-            node_id,
-            json.dumps(_safe_messages(messages), indent=2, ensure_ascii=False),
-        )
+        logger.info("[verification_node] node=%s | model call | messages=%d", node_id, len(messages))
 
         t0 = time.time()
         try:
             response = await asyncio.to_thread(llm.invoke, messages)
             elapsed = time.time() - t0
 
-            logger.info(
-                "[verification_node] node=%s | MODEL OUTPUT ↓ (%.2fs)\n%s",
-                node_id,
-                elapsed,
-                response.content,
-            )
+            logger.info("[verification_node] node=%s | model output | %.2fs chars=%d", node_id, elapsed, len(response.content or ""))
 
             token_usage = self._extract_token_usage(response)
             logger.info(
                 "[verification_node] node=%s | tokens: prompt=%d completion=%d total=%d",
                 node_id, token_usage['prompt_tokens'], token_usage['completion_tokens'], token_usage['total_tokens'],
             )
+            parsed = _parse_json_object(response.content)
+            verdict = str((parsed or {}).get("result", "")).strip().lower()
+            if verdict not in ("pass", "fail"):
+                # Fail closed: an unparseable / ambiguous verdict must never read as a pass
+                logger.warning("[verification_node] node=%s | malformed verdict, failing closed", node_id)
+                verdict, parsed = "fail", {"analysis": response.content, "issues": ["Model returned a malformed verdict"]}
+            try:
+                confidence = max(0.0, min(1.0, float(parsed.get("confidence", 0.0))))
+            except (TypeError, ValueError):
+                confidence = 0.0
             return {
                 "verification_type": verification_type,
-                "result": "pass",
-                "confidence": 0.9,
-                "analysis": response.content,
+                "result": verdict,
+                "confidence": confidence,
+                "issues": parsed.get("issues", []),
+                "recommendations": parsed.get("recommendations", []),
+                "analysis": parsed.get("analysis", ""),
                 "_token_usage": token_usage,
                 "timestamp": datetime.utcnow().isoformat(),
             }
@@ -398,22 +415,14 @@ class NodeExecutor:
         ]
 
         # Log sanitized version only — never log full data
-        logger.info(
-            "[decision_node] node=%s | MODEL INPUT ↓\n%s",
-            node_id,
-            json.dumps(_safe_messages(messages), indent=2, ensure_ascii=False),
-        )
+        logger.info("[decision_node] node=%s | model call | messages=%d", node_id, len(messages))
 
         t0 = time.time()
         try:
             response = await asyncio.to_thread(llm.invoke, messages)
             elapsed = time.time() - t0
 
-            logger.info(
-                "[decision_node] node=%s | MODEL OUTPUT ↓ (%.2fs)\n%s",
-                node_id, elapsed,
-                response.content,
-            )
+            logger.info("[decision_node] node=%s | model output | %.2fs chars=%d", node_id, elapsed, len(response.content or ""))
 
             token_usage = self._extract_token_usage(response)
             logger.info(
@@ -421,24 +430,30 @@ class NodeExecutor:
                 node_id, token_usage['prompt_tokens'], token_usage['completion_tokens'], token_usage['total_tokens'],
             )
 
-            raw = response.content.strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            raw = raw.strip()
+            parsed = _parse_json_object(response.content)
+            malformed = parsed is None
+            parsed = parsed or {}
 
-            parsed = json.loads(raw)
-            decision = str(parsed.get("decision", "rejected")).lower()
-            confidence = float(parsed.get("confidence", 0.0))
+            decision = str(parsed.get("decision", "")).strip().lower()
+            if decision not in ("approved", "rejected"):
+                malformed = True
+                decision = "rejected"  # fail closed: only an explicit "approved" may approve
+            try:
+                confidence = max(0.0, min(1.0, float(parsed.get("confidence", 0.0))))
+            except (TypeError, ValueError):
+                malformed, confidence = True, 0.0
             reasoning = str(parsed.get("reasoning", ""))
             summary = str(parsed.get("summary", ""))
-            key_findings = list(parsed.get("key_findings", []))
+            key_findings = list(parsed.get("key_findings", []) or [])
 
-            logger.info(
-                "[decision_node] node=%s | decision=%s | confidence=%.2f | summary=%r",
-                node_id, decision, confidence, summary[:200],
-            )
+            if malformed:
+                logger.warning("[decision_node] node=%s | malformed model output, failing closed to rejected", node_id)
+                reasoning = reasoning or "Model returned a malformed or ambiguous decision; rejected by default."
+            elif decision == "approved" and confidence < float(threshold):
+                decision = "rejected"
+                reasoning = f"Confidence {confidence:.2f} is below threshold {float(threshold):.2f}. {reasoning}".strip()
+
+            logger.info("[decision_node] node=%s | decision=%s | confidence=%.2f", node_id, decision, confidence)
 
             return {
                 "decision": decision,
@@ -447,27 +462,9 @@ class NodeExecutor:
                 "reasoning": reasoning,
                 "summary": summary,
                 "key_findings": key_findings,
+                "malformed_output": malformed,
                 "_active_handles": [decision],
                 "_token_usage": token_usage,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-
-        except json.JSONDecodeError as e:
-            raw_text = response.content if 'response' in dir() else ""
-            fallback = "approved" if "approved" in raw_text.lower() else "rejected"
-            logger.warning(
-                "[decision_node] node=%s | JSON parse failed (%s) | fallback=%s | raw=%r",
-                node_id, e, fallback, raw_text[:300],
-            )
-            return {
-                "decision": fallback,
-                "confidence": 0.5,
-                "threshold": threshold,
-                "reasoning": f"(JSON parse failed — fallback) {raw_text[:300]}",
-                "summary": "",
-                "key_findings": [],
-                "_active_handles": [fallback],
-                "_token_usage": {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
@@ -482,7 +479,7 @@ class NodeExecutor:
         output_type = node_data.get("outputType", "api")
         data = context.get("previous_output", {})
 
-        logger.info("[output_node] node=%s | output_type=%s | data=%s", node_id, output_type, _safe_result(data))
+        logger.info("[output_node] node=%s | output_type=%s", node_id, output_type)
 
         return {
             "output_type": output_type,
@@ -660,12 +657,11 @@ class NodeExecutor:
             return {"error": "HTTP node requires a URL"}
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.request(
-                    method, url, headers=headers,
-                    json=body if isinstance(body, (dict, list)) else None,
-                    content=body.encode() if isinstance(body, str) else None,
-                )
+            response = await safe_request(
+                method, url, timeout=timeout, headers=headers,
+                json=body if isinstance(body, (dict, list)) else None,
+                content=body.encode() if isinstance(body, str) else None,
+            )
             logger.info(
                 "[http_node] node=%s | status=%d size=%d bytes",
                 node_id, response.status_code, len(response.content),
@@ -684,6 +680,9 @@ class NodeExecutor:
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
+        except UnsafeURLError as e:
+            logger.warning("[http_node] node=%s | blocked outbound URL: %s", node_id, e)
+            return {"error": f"HTTP request blocked: {e}"}
         except Exception as e:
             logger.error("[http_node] node=%s | request failed: %s", node_id, e, exc_info=True)
             return {"error": f"HTTP request failed: {e}"}
@@ -829,10 +828,7 @@ class NodeExecutor:
     # ── Code Runner node ───────────────────────────────────────────────────────
 
     async def execute_code_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Run a custom Python snippet. Receives `input_data`; must assign `output`."""
-        import math
-        import datetime as dt
-
+        """Run a custom Python snippet in an isolated subprocess. Receives `input_data`; must assign `output`."""
         node_id   = context.get("current_node_id", "")
         code: str = node_data.get("code", "output = input_data")
         timeout_s = int(node_data.get("timeout", 10))
@@ -850,34 +846,15 @@ class NodeExecutor:
 
         logger.info("[code_node] node=%s | lines=%d timeout=%ds", node_id, code.count("\n") + 1, timeout_s)
 
-        safe_builtins: Dict[str, Any] = {
-            "len": len, "range": range, "enumerate": enumerate,
-            "list": list, "dict": dict, "str": str, "int": int, "float": float,
-            "bool": bool, "set": set, "tuple": tuple,
-            "sorted": sorted, "reversed": reversed,
-            "sum": sum, "min": min, "max": max, "abs": abs, "round": round,
-            "zip": zip, "map": map, "filter": filter, "any": any, "all": all,
-            "print": print, "repr": repr,
-            "isinstance": isinstance, "hasattr": hasattr, "getattr": getattr,
-            "type": type, "None": None, "True": True, "False": False,
-        }
-        exec_globals: Dict[str, Any] = {
-            "__builtins__": safe_builtins,
-            "json": json, "re": re, "math": math, "datetime": dt,
-            "input_data": previous_output,
-            "output": None,
-        }
-
-        def _run() -> Any:
-            exec(code, exec_globals)  # noqa: S102
-            return exec_globals.get("output")
-
         try:
-            output_val = await asyncio.wait_for(asyncio.to_thread(_run), timeout=timeout_s)
+            output_val = await code_sandbox.run_code(code, previous_output, timeout_s)
             logger.info("[code_node] node=%s | output_type=%s", node_id, type(output_val).__name__)
             return {"output": output_val, "executed": True, "timestamp": datetime.utcnow().isoformat()}
         except asyncio.TimeoutError:
             return {"error": f"Code execution timed out after {timeout_s}s"}
+        except code_sandbox.SandboxError as e:
+            logger.error("[code_node] node=%s | %s", node_id, e)
+            return {"error": str(e)}
         except Exception as e:
             logger.error("[code_node] node=%s | %s: %s", node_id, type(e).__name__, e)
             return {"error": f"{type(e).__name__}: {e}"}
@@ -1241,7 +1218,6 @@ class NodeExecutor:
             "document_type": doc_type,
             "provider": provider,
             "kyc_data": kyc_data,
-            "raw_response": raw,
             "status_code": status_code,
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -1280,8 +1256,7 @@ class NodeExecutor:
             return {"error": f"Indian KYC node: no endpoint configured for provider='{provider}' docType='{doc_type}'"}
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(url, json=body, headers=headers)
+            response = await safe_request("POST", url, timeout=30, json=body, headers=headers)
 
             logger.info(
                 "[indian_kyc_node] node=%s | status=%d size=%d",
@@ -1300,6 +1275,9 @@ class NodeExecutor:
             )
             return result
 
+        except UnsafeURLError as e:
+            logger.warning("[indian_kyc_node] node=%s | blocked outbound URL: %s", node_id, e)
+            return {"error": f"Indian KYC request blocked: {e}"}
         except Exception as e:
             logger.error("[indian_kyc_node] node=%s | request failed: %s", node_id, e, exc_info=True)
             return {"error": f"Indian KYC request failed: {e}"}
@@ -1366,11 +1344,11 @@ class WorkflowExecutor:
             has_error = "error" in result
 
             logger.info(
-                "--- NODE END | id=%s type=%s label=%r | %s %.2fs | result=%s ---",
+                "--- NODE END | id=%s type=%s label=%r | %s %.2fs | result_keys=%s ---",
                 node_id, node_type, node_label,
                 "ERROR" if has_error else "OK",
                 elapsed,
-                json.dumps(_safe_result(result), ensure_ascii=False)[:300],
+                sorted(k for k in result.keys() if not k.startswith("_"))[:20],
             )
 
             execution_trace.append({

@@ -4,6 +4,7 @@ from datetime import datetime
 import uuid
 import enum
 from app.core.database import Base
+from app.core.secrets import EncryptedString
 
 class WorkflowStatus(str, enum.Enum):
     DRAFT = "draft"
@@ -26,6 +27,8 @@ class Workflow(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     graph_data = Column(JSON, nullable=False)
+    # Encrypted JSON map of node secrets (API keys / auth headers) kept out of graph_data
+    secrets = Column(EncryptedString, nullable=True)
     status = Column(SQLEnum(WorkflowStatus), default=WorkflowStatus.DRAFT)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

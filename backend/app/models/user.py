@@ -4,6 +4,7 @@ from datetime import datetime
 import uuid
 import enum
 from app.core.database import Base
+from app.core.secrets import EncryptedString
 
 
 class UserRole(str, enum.Enum):
@@ -19,18 +20,22 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
-    api_token = Column(String(64), unique=True, nullable=False, index=True)
+    # Legacy plaintext column: emptied by the startup migration. Tokens are stored hashed.
+    api_token = Column(String(64), nullable=True)
+    api_token_hash = Column(String(64), unique=True, nullable=True, index=True)
+    api_token_prefix = Column(String(12), nullable=True)
+    api_token_created_at = Column(DateTime, nullable=True)
     credits_total = Column(Integer, default=100, nullable=False)
     credits_used = Column(Integer, default=0, nullable=False)
     # New users start inactive; admin must approve
     is_active = Column(Boolean, default=False, nullable=False)
 
     # Per-user model config (overrides platform defaults when set)
-    openai_api_key = Column(String(255), nullable=True)
+    openai_api_key = Column(EncryptedString, nullable=True)
     openai_model = Column(String(100), nullable=True)
-    anthropic_api_key = Column(String(255), nullable=True)
+    anthropic_api_key = Column(EncryptedString, nullable=True)
     anthropic_model = Column(String(100), nullable=True)
-    gemini_api_key = Column(String(255), nullable=True)
+    gemini_api_key = Column(EncryptedString, nullable=True)
     gemini_model = Column(String(100), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -55,10 +60,10 @@ class PlatformSetting(Base):
     __tablename__ = "platform_settings"
 
     id = Column(Integer, primary_key=True, default=1)
-    openai_api_key = Column(String(255), nullable=True)
+    openai_api_key = Column(EncryptedString, nullable=True)
     openai_model = Column(String(100), default="gpt-4o")
-    anthropic_api_key = Column(String(255), nullable=True)
+    anthropic_api_key = Column(EncryptedString, nullable=True)
     anthropic_model = Column(String(100), default="claude-sonnet-4-6")
-    gemini_api_key = Column(String(255), nullable=True)
+    gemini_api_key = Column(EncryptedString, nullable=True)
     gemini_model = Column(String(100), default="gemini-1.5-pro")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

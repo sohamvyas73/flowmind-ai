@@ -1,4 +1,5 @@
 import secrets
+from uuid import UUID
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -8,6 +9,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.secrets import hash_api_token, token_prefix
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -23,13 +25,21 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(days=30))
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode["exp"] = expire
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def generate_api_token() -> str:
     return secrets.token_hex(32)
+
+
+def set_api_token(user, token: str) -> None:
+    """Store only the hash + display prefix; the caller must show `token` to the user once."""
+    user.api_token_hash = hash_api_token(token)
+    user.api_token_prefix = token_prefix(token)
+    user.api_token_created_at = datetime.utcnow()
+    user.api_token = None
 
 
 async def get_current_user_allow_inactive(
@@ -52,15 +62,22 @@ async def get_current_user_allow_inactive(
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id:
-            user = db.query(User).filter(User.id == user_id).first()
+            user = db.query(User).filter(User.id == UUID(str(user_id))).first()
             if user:
                 return user
-    except JWTError:
+    except (JWTError, ValueError):
         pass
 
-    # Fall back to static API token
-    user = db.query(User).filter(User.api_token == token).first()
+    # Fall back to static API token (stored hashed)
+    user = db.query(User).filter(User.api_token_hash == hash_api_token(token)).first()
     if user:
+        ttl = settings.API_TOKEN_TTL_DAYS
+        if ttl and user.api_token_created_at and datetime.utcnow() - user.api_token_created_at > timedelta(days=ttl):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API token expired. Rotate it in the app.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return user
 
     raise HTTPException(

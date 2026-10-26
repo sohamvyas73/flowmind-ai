@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 type Tab = 'login' | 'signup';
 
 export function LoginPage() {
-  const { setAuth } = useAuthStore();
+  const { setAuth, setRevealedApiToken } = useAuthStore();
   const [tab, setTab] = useState<Tab>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,6 +23,7 @@ export function LoginPage() {
         ? await authApi.login(email, password)
         : await authApi.signup(email, password, fullName || undefined);
       setAuth(res.user, res.access_token);
+      if (res.api_token) setRevealedApiToken(res.api_token);
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === 'string' ? detail : 'Something went wrong. Please try again.');
