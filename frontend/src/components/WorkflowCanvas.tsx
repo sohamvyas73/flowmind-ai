@@ -141,8 +141,8 @@ export function WorkflowCanvas() {
           }}
           className="bg-white border border-gray-200 rounded"
         />
-        <Panel position="top-center">
-          <Toolbar />
+        <Panel position="top-left" className="!m-0 !left-[288px] !right-4 !top-4 flex justify-center pointer-events-none">
+          <div className="max-w-full overflow-x-auto pointer-events-auto rounded-lg [&>div]:min-w-max"><Toolbar /></div>
         </Panel>
       </ReactFlow>
       

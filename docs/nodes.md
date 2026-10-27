@@ -2,6 +2,10 @@
 
 Complete reference for all 14 workflow node types, plus the 6 [data nodes](#data-nodes). Each section covers what the node does, every configuration field, the structure of its output, and a practical example.
 
+> 📸 Every node's settings panel is shown in the [screenshot gallery](screenshots.md#node-settings).
+
+![All node types on one canvas](images/gallery/04-node-settings/00-all-nodes-canvas.png)
+
 ---
 
 ## Table of Contents
