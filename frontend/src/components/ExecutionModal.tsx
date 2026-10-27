@@ -6,7 +6,7 @@ import {
   Database, Brain, CheckCircle, GitBranch, Send,
   Globe, Shuffle, UserCheck, Clock,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator,
-  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2,
+  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck,
 } from 'lucide-react';
 import { WorkflowExecution, InputField } from '@/types/workflow';
 
@@ -32,6 +32,7 @@ const nodeIcons: Record<string, React.FC<{ className?: string }>> = {
   combineDataNode:   ({ className }) => <Merge           className={className} />,
   summariseDataNode: ({ className }) => <Sigma           className={className} />,
   sqlNode:           ({ className }) => <FileCode2       className={className} />,
+  qualityGateNode:   ({ className }) => <ClipboardCheck  className={className} />,
 };
 
 const nodeColors: Record<string, string> = {
@@ -54,6 +55,7 @@ const nodeColors: Record<string, string> = {
   combineDataNode:   'text-cyan-600',
   summariseDataNode: 'text-cyan-600',
   sqlNode:           'text-cyan-600',
+  qualityGateNode:   'text-pink-600',
 };
 
 interface ExecutionModalProps {
@@ -337,6 +339,17 @@ function StepSummary({ result }: { result: Record<string, unknown> | undefined }
   if (result.error) return <p className="text-xs text-red-600">{result.error as string}</p>;
 
   const safe = sanitizeForDisplay(result) as Record<string, unknown>;
+
+  // Quality gate: pass/fail summary first
+  if (result.quality && typeof result.quality === 'object') {
+    const q = result.quality as { passed: boolean; checks: number; failed_errors: number; failed_warnings: number };
+    return (
+      <p className={`text-xs mt-1 ${q.passed ? 'text-green-700' : 'text-red-600'}`}>
+        {q.passed ? `All ${q.checks} checks passed` : `${q.failed_errors} of ${q.checks} checks failed`}
+        {q.failed_warnings > 0 && <span className="text-amber-600"> · {q.failed_warnings} warning(s)</span>}
+      </p>
+    );
+  }
 
   // Data nodes: show the shape of the table they produced (full table: "Preview data" or the Data page)
   if (result.dataset && typeof result.dataset === 'object') {

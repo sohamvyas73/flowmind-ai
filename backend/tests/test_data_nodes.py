@@ -348,7 +348,7 @@ class IsolationAndLimitsTests(TestCase):
     def test_examples_are_idempotent_and_deletable(self):
         _, _, h = signup()
         first = client.post(f"{API}/data/examples", headers=h).json()
-        self.assertEqual({f["name"] for f in first}, {"customers.csv", "orders.csv", "sales.csv", "messy_contacts.csv"})
+        self.assertEqual({f["name"] for f in first}, {"customers.csv", "orders.csv", "orders_dirty.csv", "sales.csv", "messy_contacts.csv"})
         self.assertEqual(client.post(f"{API}/data/examples", headers=h).json(), [])
         fid = first[0]["id"]
         self.assertEqual(client.delete(f"{API}/data/files/{fid}", headers=h).status_code, 204)

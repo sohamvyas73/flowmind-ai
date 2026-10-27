@@ -407,4 +407,43 @@ export const sampleWorkflows: SampleWorkflow[] = [
     ],
     edges: [{ id: 'dq_e1', source: 'dq_1', target: 'dq_2' }],
   },
+  {
+    name: 'Data: Quality gate on dirty orders',
+    description: 'A Quality Check that finds duplicates, bad quantities and typos before anything else runs. Needs orders_dirty.csv. Preview it, then switch "When a check fails" to Stop.',
+    nodes: [
+      { id: 'dg_1', type: 'loadDataNode', position: { x: 60, y: 160 },
+        data: { label: 'Dirty orders', source: 'file', fileName: 'orders_dirty.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'dg_2', type: 'qualityGateNode', position: { x: 300, y: 160 },
+        data: { label: 'Order checks', onFail: 'warn', rules: [
+          { type: 'unique', columns: ['order_id'] },
+          { type: 'not_null', columns: ['customer_id', 'unit_price'] },
+          { type: 'range', column: 'quantity', min: 1, max: 100 },
+          { type: 'allowed_values', column: 'status', values: ['delivered', 'shipped', 'cancelled'] },
+          { type: 'regex', column: 'order_date', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        ] } },
+      { id: 'dg_3', type: 'summariseDataNode', position: { x: 540, y: 160 },
+        data: { label: 'Orders by status', groupBy: ['status'], aggregations: [{ column: '*', fn: 'count', as: 'orders' }] } },
+    ],
+    edges: [
+      { id: 'dg_e1', source: 'dg_1', target: 'dg_2' },
+      { id: 'dg_e2', source: 'dg_2', target: 'dg_3' },
+    ],
+  },
+  {
+    name: 'Data: Protect personal data',
+    description: 'Hash emails and mask names before sharing a table. Needs customers.csv.',
+    nodes: [
+      { id: 'dp_1', type: 'loadDataNode', position: { x: 60, y: 160 },
+        data: { label: 'Customers', source: 'file', fileName: 'customers.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'dp_2', type: 'cleanDataNode', position: { x: 300, y: 160 },
+        data: { label: 'Protect', trimAll: true, removeDuplicates: false, dropMissing: [], fillMissing: [], rename: [], keepColumns: [],
+                protect: [{ column: 'email', method: 'hash' }, { column: 'name', method: 'mask' }], hashSalt: '' } },
+      { id: 'dp_3', type: 'sqlNode', position: { x: 540, y: 160 },
+        data: { label: 'Share-safe table', query: 'SELECT customer_id, name, left(email, 12) AS contact_hash, city, tier\nFROM input' } },
+    ],
+    edges: [
+      { id: 'dp_e1', source: 'dp_1', target: 'dp_2' },
+      { id: 'dp_e2', source: 'dp_2', target: 'dp_3' },
+    ],
+  },
 ];

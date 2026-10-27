@@ -3,7 +3,7 @@ export type NodeType =
   | 'httpNode' | 'transformNode' | 'humanReviewNode'
   | 'ruleNode' | 'codeNode' | 'validatorNode' | 'switchNode' | 'formatterNode' | 'aggregatorNode'
   | 'indianKycNode'
-  | 'loadDataNode' | 'cleanDataNode' | 'combineDataNode' | 'summariseDataNode' | 'sqlNode';
+  | 'loadDataNode' | 'cleanDataNode' | 'combineDataNode' | 'summariseDataNode' | 'sqlNode' | 'qualityGateNode';
 
 export interface InputField {
   id: string;

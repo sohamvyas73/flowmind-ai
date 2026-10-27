@@ -13,7 +13,7 @@ import {
   InputNode, AINode, VerificationNode, DecisionNode, OutputNode,
   HttpNode, TransformNode, HumanReviewNode,
   RuleNode, CodeNode, ValidatorNode, SwitchNode, FormatterNode, AggregatorNode,
-  IndianKycNode, LoadDataNode, CleanDataNode, CombineDataNode, SummariseDataNode, SqlNode,
+  IndianKycNode, LoadDataNode, CleanDataNode, CombineDataNode, SummariseDataNode, SqlNode, QualityGateNode,
 } from './CustomNodes';
 import { NodePalette } from './NodePalette';
 import { NodePropertiesPanel } from './NodePropertiesPanel';
@@ -41,6 +41,7 @@ const nodeTypes = {
   combineDataNode: CombineDataNode,
   summariseDataNode: SummariseDataNode,
   sqlNode: SqlNode,
+  qualityGateNode: QualityGateNode,
 };
 
 export function WorkflowCanvas() {
@@ -134,6 +135,7 @@ export function WorkflowCanvas() {
               combineDataNode: '#06b6d4',
               summariseDataNode: '#06b6d4',
               sqlNode: '#06b6d4',
+              qualityGateNode: '#ec4899',
             };
             return colors[node.type || 'default'] || '#94a3b8';
           }}

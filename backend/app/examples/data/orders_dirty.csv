@@ -1,0 +1,17 @@
+order_id,customer_id,order_date,product,quantity,unit_price,status
+2000,1,2026-03-01,Notebook,2,120,delivered
+2001,2,2026-03-01,Backpack,1,890,delivered
+2002,3,2026-03-02,Headphones,1,2499,shipped
+2002,3,2026-03-02,Headphones,1,2499,shipped
+2003,,2026-03-03,Desk Lamp,1,749,delivered
+2004,4,2026-03-03,Keyboard,-2,1599,delivered
+2005,5,2026-03-04,Water Bottle,0,299,cancelled
+2006,6,2026-03-04,Notebook,500,120,delivered
+2007,7,2026-03-05,Backpack,2,890,shiped
+2008,1,2026-03-05,Keyboard,1,1599,DELIVERED
+2009,2,yesterday,Notebook,3,120,delivered
+2010,3,2026-03-06,Headphones,1,,delivered
+2011,4,2026-03-07,Desk Lamp,2,749,delivered
+2012,5,2026-03-07,Water Bottle,4,299,shipped
+2013,6,2026-03-08,Backpack,1,890,delivered
+2014,7,2026-03-08,Notebook,2,120,cancelled

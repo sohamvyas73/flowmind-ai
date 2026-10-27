@@ -10,8 +10,11 @@ interface WorkflowState {
   workflowId: string | null;
   showLivePanel: boolean;
   // Column schemas per node id, filled by a data preview; powers the column pickers in the properties panel
-  previewSchemas: Record<string, { name: string; type: string }[]>;
-  setPreviewSchemas: (schemas: Record<string, { name: string; type: string }[]>) => void;
+  previewSchemas: Record<string, { name: string; type: string; pii?: boolean }[]>;
+  setPreviewSchemas: (schemas: Record<string, { name: string; type: string; pii?: boolean }[]>) => void;
+  // Dataset id of each node's last preview (lets the editor profile data and suggest quality checks)
+  previewDatasetIds: Record<string, string>;
+  setPreviewDatasetIds: (ids: Record<string, string>) => void;
 
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
@@ -43,6 +46,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   showLivePanel: false,
   previewSchemas: {},
   setPreviewSchemas: (schemas) => set({ previewSchemas: schemas }),
+  previewDatasetIds: {},
+  setPreviewDatasetIds: (ids) => set({ previewDatasetIds: ids }),
   
   setNodes: (nodes) => set({ nodes }),
   
@@ -132,6 +137,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     } else if (type === 'summariseDataNode') {
       data.groupBy = [];
       data.aggregations = [{ column: '*', fn: 'count', as: 'row_count' }];
+    } else if (type === 'qualityGateNode') {
+      data.rules = [];
+      data.onFail = 'stop';
     } else if (type === 'sqlNode') {
       data.query = 'SELECT *\nFROM input\nLIMIT 100';
     } else if (type === 'indianKycNode') {
@@ -215,6 +223,7 @@ function getNodeLabel(type: string): string {
     combineDataNode: 'Combine',
     summariseDataNode: 'Summarise',
     sqlNode: 'SQL',
+    qualityGateNode: 'Quality Check',
   };
   return labels[type] || 'Node';
 }

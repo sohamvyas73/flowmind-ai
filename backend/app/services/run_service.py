@@ -17,6 +17,7 @@ from app.core.database import SessionLocal
 from app.core.ratelimit import limiter
 from app.core.secrets import inject_graph_secrets, load_secrets, redact
 from app.jobs.queue import queue
+from app.lineage import store as lineage_store
 from app.models.user import CreditUsage, PlatformSetting, User
 from app.models.workflow import ExecutionStatus, Workflow, WorkflowExecution
 from app.services.workflow_executor import WorkflowExecutor
@@ -80,9 +81,10 @@ CREDIT_COSTS: Dict[str, int] = {
     "combineDataNode": 2,
     "summariseDataNode": 1,
     "sqlNode": 2,
+    "qualityGateNode": 1,
 }
 
-_DATA_NODES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode"}
+_DATA_NODES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode"}
 _SCAN_BYTES_PER_CREDIT = 100 * 1024 * 1024     # +1 credit per full 100 MB scanned
 _COMPUTE_SECONDS_PER_CREDIT = 30               # +1 credit per full 30 s of compute
 
@@ -157,8 +159,8 @@ def _charge_credits(
             if cost == 0:
                 continue
             if node_type in _DATA_NODES:
-                if "error" in result:
-                    continue                       # a failed data node did no billable work
+                if "error" in result and "quality" not in result:
+                    continue                       # a failed data node did no billable work (a failed quality check did)
                 cost += _data_usage_extra(result)
                 desc = f"Data · {node_type.replace('Node', '')} · {int(result.get('row_count') or 0):,} rows"
             elif node_type == "indianKycNode":
@@ -324,6 +326,8 @@ async def execute_prepared(execution_id: Any, input_data: Optional[Dict[str, Any
         # Credits and API keys belong to whoever started the run (the schedule owner for scheduled runs)
         user_id, email = user.id, user.email
         workflow_id = workflow.id
+        workflow_name = workflow.name
+        started_at = execution.started_at
         graph = inject_graph_secrets(workflow.graph_data, load_secrets(workflow.secrets))
         resolved_keys = _resolve_api_keys(user, db)
         execution.status = ExecutionStatus.RUNNING
@@ -343,6 +347,9 @@ async def execute_prepared(execution_id: Any, input_data: Optional[Dict[str, Any
         logger.error("RUN FAILED | execution=%s | %s", execution_id, e, exc_info=True)
 
     trace = result.get("execution_trace") or []
+    labels = {n["id"]: (n.get("data") or {}).get("label", n["id"]) for n in graph.get("nodes", [])}
+    sources = {e["source"] for e in graph.get("edges", [])}
+    terminal_ids = [n["id"] for n in graph.get("nodes", []) if n["id"] not in sources]
     charged = 0
     fresh = SessionLocal()
     try:
@@ -370,6 +377,12 @@ async def execute_prepared(execution_id: Any, input_data: Optional[Dict[str, Any
         fresh.close()
     if charged:
         logger.info("Credits charged | user=%s credits=%d", email, charged)
+
+    await lineage_store.record_run(
+        user_id=user_id, execution_id=execution_id, workflow_name=workflow_name, started_at=started_at,
+        completed_at=datetime.utcnow(), status=("failed" if error or result.get("status") == "failed" else "completed"),
+        error=error or result.get("error"), trace=trace, labels=labels, terminal_node_ids=terminal_ids,
+    )
     return result
 
 
@@ -438,6 +451,8 @@ async def preview_run(user: User, workflow: Workflow, input_data: Optional[Dict[
         if r.get("dataset"):
             item["dataset"] = r["dataset"]
             item["sql"] = r.get("sql")
+        if r.get("quality"):
+            item["quality"] = r["quality"]
         steps.append(item)
     out = {"status": result.get("status", "failed"), "sample_rows": settings.DRY_RUN_ROWS, "nodes": steps}
     if result.get("status") == "failed":

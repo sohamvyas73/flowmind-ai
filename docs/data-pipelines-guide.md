@@ -17,12 +17,13 @@ A **data pipeline** is a recipe for turning raw data into something useful:
 ```mermaid
 flowchart LR
     A["📄 Load Data<br/>(a file or a database table)"] --> B["🧹 Clean<br/>fix the mess"]
-    B --> C["🔗 Combine<br/>add info from another table"]
+    B --> Q["✅ Quality Check<br/>stop bad data early"]
+    Q --> C["🔗 Combine<br/>add info from another table"]
     C --> D["Σ Summarise<br/>totals, counts, averages"]
     D --> E["📊 Result table<br/>download or feed AI"]
 ```
 
-Each box is a **node**. You drag nodes onto the canvas, connect them with lines, and set a few options. The data
+Each box is a **node**. (The **Quality Check** box is optional but strongly recommended: it is the smoke alarm of your pipeline.) You drag nodes onto the canvas, connect them with lines, and set a few options. The data
 flows left to right, and every node hands a **table** (rows and columns, like a spreadsheet tab) to the next.
 
 Three words you will see everywhere:
@@ -38,7 +39,7 @@ Three words you will see everywhere:
 | | **Preview data** | **Execute** |
 |---|---|---|
 | What it does | Runs the data steps on a **small sample** (up to 1,000 rows) | Runs the **whole thing** |
-| Costs credits? | **No** | Yes (a few credits, see [costs](#9-limits-costs-and-privacy)) |
+| Costs credits? | **No** | Yes (a few credits, see [costs](#10-limits-costs-and-privacy)) |
 | Calls AI / web / KYC nodes? | **No** (they are skipped) | Yes |
 | Saves results? | Only for a day | Saves tables you can download |
 | Use it for | Checking your recipe while you build | The real run |
@@ -84,9 +85,32 @@ Click **Preview** next to any file to see its columns, their types and the first
 
 ![File preview](images/data-file-preview.png)
 
+**Profile** (next to Preview) tells you what is *in* the file before you build anything: for every column, how many
+values are empty, how many different values there are, and the smallest and largest. It also suggests quality checks
+(see [Quality checks](#-quality-check--stop-bad-data-early)). For `orders_dirty.csv`:
+
+| Column | Type | Empty | Different values | Smallest | Largest |
+|---|---|---|---|---|---|
+| order_id | BIGINT | 0 (0.0%) | 15 | 2000 | 2014 |
+| customer_id | BIGINT | 1 (6.2%) | 7 | 1 | 7 |
+| order_date | VARCHAR | 0 (0.0%) | 9 | 2026-03-01 | yesterday |
+| product | VARCHAR | 0 (0.0%) | 6 | Backpack | Water Bottle |
+| quantity | BIGINT | 0 (0.0%) | 7 | -2 | 500 |
+| unit_price | BIGINT | 1 (6.2%) | 6 | 120 | 2499 |
+| status | VARCHAR | 0 (0.0%) | 5 | DELIVERED | shipped |
+
+Spot the problems already: `customer_id` has an empty value, `order_date` has the word `yesterday` as its "largest"
+value (so it is text, not a date), `quantity` ranges from -2 to 500, and `status` has 5 spellings of 3 statuses.
+
+![Profile of a file](images/data-profile.png)
+
 > **Privacy by default.** Columns that look sensitive (names like `email`, `phone`, `aadhaar`, `pan`, `address`,
 > `password`, `salary`…) are tagged **pii** and their values are shown as `[REDACTED]` in previews and stored results.
 > The real values are still used inside your pipeline — only what is *displayed and saved for viewing* is masked.
+> FlowMind looks at the **values** too, not just the column name: a column called `contact` that holds email
+> addresses, or a column of valid Aadhaar / PAN / card / IBAN numbers, is detected and masked automatically.
+> (Detection checks a sample of the rows and, for numbers with check digits, validates the check digit, so ordinary
+> IDs such as `1001` are not flagged.)
 
 ### Option B — read a database table
 
@@ -98,7 +122,7 @@ allow-listed by an admin. Details: [Phase 1 guide](phase1-foundation.md).
 
 ---
 
-## 4. The five nodes (with before → after)
+## 4. The nodes (with before → after)
 
 Open any node by clicking it; its settings appear on the right. Column names are offered as clickable chips once you
 have run **Preview data** at least once.
@@ -140,6 +164,7 @@ Every option you tick becomes a step of one SQL query (you can read it in the pr
 | Change text case | `lowercase` or `UPPERCASE` for chosen columns |
 | Rename columns | `city` → `town` |
 | Keep only these columns | Throw away the rest |
+| **Protect personal data** | Replace a column with a **hash** (one-way fingerprint), a **mask** (`******atel`), `[REMOVED]`, or **blank** it |
 
 Settings used in the quick tutorial: trim all, remove duplicates, drop rows with empty **name**, fill empty **city**
 with `Unknown`, lowercase **email**. Result — 9 rows became 6:
@@ -164,6 +189,27 @@ s3 AS (SELECT * FROM s2 WHERE NOT (("name" IS NULL OR trim("name") = ''))),
 s4 AS (SELECT * REPLACE (COALESCE(NULLIF(trim("city"), ''), 'Unknown') AS "city") FROM s3)
 SELECT DISTINCT * FROM s4
 ```
+
+**Protect personal data.** When a column holds personal data, you often still need *something* to join or count on,
+without exposing the real value. Hashing keeps rows matchable; masking keeps a hint; redact/blank remove it.
+Customers with email **hashed**, name **masked**, city **redacted**:
+
+| customer_id | name | contact_hash | city | tier |
+|---|---|---|---|---|
+| 1 | ******atel | 21cc2e2de7f6 | [REMOVED] | gold |
+| 2 | ******rter | 2ec0798d88b2 | [REMOVED] | silver |
+| 3 | ********bois | 5f844dda35f7 | [REMOVED] | gold |
+| 4 | ******arma | 1eeadc060bbc | [REMOVED] | bronze |
+
+```sql
+SELECT * REPLACE (sha256(CAST("email" AS VARCHAR)) AS "email", CASE WHEN "name" IS NULL THEN NULL ELSE repeat('*', greatest(length(CAST("name" AS VARCHAR)) - 4, 0)) || right(CAST("name" AS VARCHAR), 4) END AS "name", CASE WHEN "city" IS NULL THEN NULL ELSE '[REMOVED]' END AS "city") FROM input
+```
+
+> **Tip:** a plain hash of something guessable (a 10-digit phone number) can be reversed by trying every number. Add a
+> secret **salt** in the node to prevent that. After Preview, the editor even offers a one-click "Personal data
+> detected in: … — protect them" button.
+
+![Protect personal data](images/protect-personal-data.png)
 
 ### 🔗 Combine — "add information from another table"
 
@@ -220,6 +266,76 @@ ORDER BY "city"
 
 ![Node settings and column chips](images/data-node-settings.png)
 
+### ✅ Quality Check — "stop bad data early"
+
+Bad data is the most common reason AI and reports go wrong, and the most expensive moment to find out is *after* the
+numbers have reached someone. A **Quality Check** node sits between two steps and checks the table that flows through
+it. If something is wrong the run **stops** (or just warns, your choice) and tells you exactly what and where.
+
+| Check | Plain meaning | Example |
+|---|---|---|
+| Never empty | No blank / missing values | `customer_id` is always filled in |
+| No duplicates | Every value (or combination) appears once | `order_id` |
+| Number / date in range | Between a minimum and/or maximum | `quantity` between 1 and 100 |
+| Only these values | A fixed list | `status` is `delivered`, `shipped` or `cancelled` |
+| Matches a pattern | Text matches a regular expression | `order_date` looks like `2026-03-31` |
+| At most N% empty | Tolerate a few blanks | `age` at most 5% empty |
+| At least / at most N rows | Table size sanity check | "yesterday's load wasn't empty" |
+| Columns match a contract | Required columns (and types) exist | `order_id` is an integer |
+| Custom condition | Any SQL condition that must hold | `quantity * unit_price > 0` |
+
+Each check is either **must pass** (can stop the run) or **warn only** (reported, never stops it). The node setting
+**When a check fails** chooses between *Stop the run* and *Keep going, just report it*.
+
+**Example — the dirty orders file** (*Sample: "Data: Quality gate on dirty orders"*). Five checks, all of which find a
+real problem in `orders_dirty.csv`:
+
+| | Check | Result |
+|---|---|---|
+| ❌ | order_id must be unique | 1 value(s) appear more than once |
+| ❌ | customer_id, unit_price must not be empty | 2 of 16 rows break this rule |
+| ❌ | quantity must be between 1 and 100 | 3 of 16 rows break this rule |
+| ❌ | status must be one of: delivered, shipped, cancelled | 2 of 16 rows break this rule |
+| ❌ | order_date must match ^\d{4}-\d{2}-\d{2}$ | 1 of 16 rows break this rule |
+
+Click a failed check to see **example rows** that broke it (personal data masked as usual):
+
+| order_id | customer_id | order_date | product | quantity | unit_price | status |
+|---|---|---|---|---|---|---|
+| 2004 | 4 | 2026-03-03 | Keyboard | -2 | 1599 | delivered |
+| 2005 | 5 | 2026-03-04 | Water Bottle | 0 | 299 | cancelled |
+| 2006 | 6 | 2026-03-04 | Notebook | 500 | 120 | delivered |
+
+![Quality report](images/quality-report.png)
+
+If the node is set to **Stop**, the run fails with a message you can act on, and nothing after the gate runs:
+
+> *Node 'Order checks' failed: 5 of 5 quality checks did not pass — order_id must be unique (1 value(s) appear more than
+> once); customer_id, unit_price must not be empty (2 of 16 rows break this rule); quantity must be between 1 and 100
+> (3 of 16 rows break this rule); status must be one of: delivered, shipped, cancelled (2 of 16 rows break this rule)
+> and 1 more*
+
+The table passes through the gate **unchanged**, so you can put gates anywhere without copying data. All checks are
+evaluated in **one pass** over the data (the SQL is shown in the preview, so you can see exactly how each check works).
+
+**Don't know what to check? Let FlowMind suggest.** After **Preview data**, open the Quality Check node and click
+**✨ Suggest checks from my data**. FlowMind profiles the table and proposes checks with plain reasons, which you can
+untick before adding:
+
+- The table should not be empty
+- 'order_id' is never empty in this data
+- every 'order_id' is different in this data
+- 'customer_id' is never empty in this data
+- 'product' only has these 6 values today
+- 'quantity' currently ranges from 1 to 4 — widen if that's too tight
+- 'unit_price' currently ranges from 120 to 2499 — widen if that's too tight
+- 'status' only has these 3 values today
+
+(That is the suggestion list for the clean `orders.csv`. They are *drafts*: "quantity currently ranges 1 to 4" is
+suggested as a **warn-only** range so you can widen it if real data may go higher.)
+
+![The check editor](images/quality-editor.png)
+
 ### 🧾 SQL — "for engineers (and the curious)"
 
 See [Pro mode](#6-pro-mode-the-sql-node).
@@ -275,14 +391,34 @@ ORDER BY revenue DESC
 
 ![Join preview](images/data-join-preview.png)
 
-### Tutorial 4 — Database → report
+### Tutorial 4 — Stop bad data before it spreads  *(Sample: "Data: Quality gate on dirty orders")*
+
+**Goal:** make sure the orders feed is trustworthy before totals are calculated.
+**Steps:**
+1. **Data → Profile** on `orders_dirty.csv` and notice the oddities (empty `customer_id`, `yesterday` as a date, `-2` quantity).
+2. Load the sample, press **Preview data**. The Quality Check shows **5 of 5 checks failed** with example rows.
+3. Click the **Order checks** node. The gate is on **Keep going, just report it** (so you can look around); switch it to
+   **Stop the run**, press **Execute → Run Workflow**.
+4. The run is marked **Failed** with the readable reason above, nothing after the gate ran, and **Runs** shows the
+   [lineage](#8-lineage--where-did-this-number-come-from) with the failed checks.
+5. Fix the source data (or relax a check that was too strict) and run again.
+
+**What you learned:** a gate turns "wrong numbers in a dashboard" into "run stopped, here is why".
+
+### Tutorial 5 — Share a table safely  *(Sample: "Data: Protect personal data")*
+
+**Goal:** give a colleague or an AI a customer table without exposing personal data.
+**Steps:** Load `customers.csv` → **Clean** with *Protect personal data* (email → hash, name → mask) → **SQL** to
+select the columns you want to share. **Result:** the table in [Clean → Protect](#-clean--fix-the-mess).
+
+### Tutorial 6 — Database → report
 
 1. Add a PostgreSQL **Connection** and **Test** it.
 2. **Load Data** → *A database table* → pick the table (optionally limit columns and rows).
 3. Add **Clean** / **Summarise** as in the tutorials above.
 4. **Preview data**, then **Execute**.
 
-### Tutorial 5 — Run it every morning
+### Tutorial 7 — Run it every morning
 
 1. Save the workflow.
 2. Open **Runs → Schedules**, pick the workflow, choose *Every day at 09:00* and your timezone, press **Create**.
@@ -407,7 +543,22 @@ flowchart LR
 
 ---
 
-## 8. Using results with the rest of FlowMind
+## 8. Lineage — "where did this number come from?"
+
+Every run that used data nodes keeps a **lineage record**: which file or table each step read, which table it
+produced, how many rows, and whether its quality checks passed. Open **Runs**, expand a run, and look at **Data
+lineage**:
+
+![Lineage of a run](images/lineage-run.png)
+
+For auditors, data catalogs and data engineers there is also the **OpenLineage JSON** download — the industry-standard
+format understood by tools such as Marquez, DataHub and OpenMetadata. It lists every step as a standard *job run* with
+its inputs, outputs, column list, row counts, the SQL it ran and its quality-check results. Admins can have FlowMind
+send these events to a lineage server automatically (see the [technical reference](phase3-trust-and-lineage.md)).
+
+---
+
+## 9. Using results with the rest of FlowMind
 
 A data node's output also works with the existing nodes: connect it to a **Rule**, **Switch**, **Formatter**, **AI
 Agent** or **HTTP** node. They receive the table's schema and a small sample (`dataset.sample`) — handy for
@@ -416,7 +567,7 @@ Agent** or **HTTP** node. They receive the table's schema and a small sample (`d
 
 ---
 
-## 9. Limits, costs and privacy
+## 10. Limits, costs and privacy
 
 | Topic | Rule |
 |---|---|
@@ -425,9 +576,10 @@ Agent** or **HTTP** node. They receive the table's schema and a small sample (`d
 | **Rows** | Load Data reads up to 1,000,000 rows; a SQL result may have up to 1,000,000 rows |
 | **Time** | A query is stopped after 60 seconds |
 | **Preview** | Free; samples up to 1,000 rows; AI/HTTP/KYC/code nodes are skipped |
-| **Credits (Execute)** | Load 1 · Clean 1 · Summarise 1 · Combine 2 · SQL 2. Plus **1 extra credit** for every full 100 MB scanned and for every full 30 s of compute — small data costs the base price |
+| **Credits (Execute)** | Load 1 · Clean 1 · Summarise 1 · **Quality Check 1** · Combine 2 · SQL 2. Plus **1 extra credit** for every full 100 MB scanned and for every full 30 s of compute — small data costs the base price |
 | **Saved outputs** | Deleted automatically after 7 days (download what you want to keep). Uploaded files stay until you delete them |
-| **Sensitive data** | Columns that look personal are masked in previews, results and stored traces |
+| **Sensitive data** | Columns that look personal — by **name or by their values** — are masked in previews, results, quality-check examples and stored traces |
+| **Lineage** | Kept as long as run history (30 days by default) |
 | **Who can see what** | Your files and outputs are visible only to you. Admins can see that a connection exists (never its password) |
 
 If you run out of credits, Execute stops **before** anything runs and tells you how many credits it needs. Preview
@@ -435,7 +587,7 @@ always works.
 
 ---
 
-## 10. When something goes wrong
+## 11. When something goes wrong
 
 | You see | It usually means | Fix |
 |---|---|---|
@@ -448,13 +600,18 @@ always works.
 | *Only SELECT queries are allowed…* | SQL node contains INSERT/DROP/COPY/… | Use a single `SELECT` |
 | *Permission Error … file system operations are disabled* | The SQL tried to read a file | Load the file with **Load Data** and query `input` |
 | *The query took longer than 60s…* | Too much data / expensive query | Filter or aggregate earlier, use *Max rows*, or sample first |
+| *N of M quality checks did not pass — …* | A Quality Check found real problems (this is the gate doing its job) | Open **Preview data**, click the failed check to see example rows; fix the data, or relax/`warn only` the check |
+| *… column 'x' was not found. Available columns: …* (in a check) | A check names a column that isn't in the table coming in | Pick the column from the chips; re-run **Preview data** |
+| *… a range needs a number or date column* | Range check on a text column | Convert the column first (e.g. a SQL node with `CAST(col AS DATE)`) |
+| *… invalid pattern* | The regular expression isn't valid | Check brackets/escapes; test it on a few values |
+| *… the condition must be one SQL expression* | A custom condition contained `;` | Write one expression, e.g. `quantity * unit_price > 0` |
 | *Storage limit reached* | 500 MB full | Delete files / old outputs on the Data page |
 | *Insufficient credits* | Not enough credits for Execute | Ask your admin for a top-up. Preview is still free |
 | *Host … is a private or reserved address. Ask an admin to allow-list it* | Your database is on a private network | An admin adds the host to the connection's allow-list |
 
 ---
 
-## 11. Glossary
+## 12. Glossary
 
 - **CSV** — a plain-text spreadsheet; one row per line, columns separated by commas.
 - **Parquet** — a compact, fast file format for tables, popular in data engineering.
@@ -466,11 +623,19 @@ always works.
 - **SQL** — the standard language for querying tables. **DuckDB** is the engine FlowMind uses to run it.
 - **Pipeline** — a workflow whose nodes move and shape data.
 - **Dry run / preview** — a free test on a sample.
+- **Quality check / gate** — a node that tests a table against rules and can stop the run.
+- **Contract (schema contract)** — a promise about which columns exist and their types.
+- **Profile** — per-column statistics: empty values, distinct values, smallest, largest.
+- **Hash** — a one-way fingerprint of a value; the same input always gives the same hash. **Salt** — a secret added so hashes can't be guessed.
+- **Mask** — hide most of a value but keep a hint (`******atel`).
+- **Lineage** — the record of what data a step read and what it produced.
+- **OpenLineage** — an open standard format for lineage events, understood by many data tools.
 
 ---
 
 ### Where next?
 
 - Technical details, security model, API and configuration: [phase2-data-engine.md](phase2-data-engine.md)
+- Quality checks, PII detection, profiling and lineage internals: [phase3-trust-and-lineage.md](phase3-trust-and-lineage.md)
 - Connections, background runs and schedules: [phase1-foundation.md](phase1-foundation.md)
 - The full roadmap (quality gates, vectors/RAG, ML, warehouses): [data-engineering-platform.md](data-engineering-platform.md)

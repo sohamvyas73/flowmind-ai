@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft, HardDrive, Upload, Loader2, Trash2, Eye, Download, XCircle, FileSpreadsheet, Table2,
-  Sparkles, X, Info,
+  Sparkles, X, Info, BarChart3,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
-import { dataApi, DataFile, DatasetInfo, DatasetRef, DataUsage } from '@/services/api';
+import { dataApi, DataFile, DatasetInfo, DatasetRef, DataUsage, DataProfile } from '@/services/api';
+import { ProfileTable } from '@/components/QualityViews';
 import { DatasetTable, formatBytes } from '@/components/DatasetTable';
 
 function errMsg(e: unknown, fallback: string): string {
@@ -25,6 +26,8 @@ export function DataPage() {
   const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState<{ title: string; ref: DatasetRef } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [profile, setProfile] = useState<{ title: string; data: DataProfile } | null>(null);
+  const [profiling, setProfiling] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -64,6 +67,13 @@ export function DataPage() {
     setPreview(null);
     try { setPreview({ title, ref: await fn() }); } catch (e) { setError(errMsg(e, 'Could not open this data.')); }
     finally { setPreviewLoading(false); }
+  };
+
+  const openProfile = async (f: DataFile) => {
+    setProfiling(true);
+    setProfile(null);
+    try { setProfile({ title: f.name, data: await dataApi.profileFile(f.id) }); } catch (e) { setError(errMsg(e, 'Could not profile this file.')); }
+    finally { setProfiling(false); }
   };
 
   const removeFile = async (f: DataFile) => {
@@ -165,6 +175,11 @@ export function DataPage() {
                       className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md">
                       <Eye className="w-3.5 h-3.5" /> Preview
                     </button>
+                    <button onClick={() => openProfile(f)} disabled={profiling}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md disabled:opacity-50"
+                      title="Empty values, ranges and distinct counts per column">
+                      <BarChart3 className="w-3.5 h-3.5" /> Profile
+                    </button>
                     <button onClick={() => removeFile(f)} className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-md" title="Delete">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -215,6 +230,29 @@ export function DataPage() {
           )}
         </section>
       </div>
+
+      {profile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setProfile(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white">
+              <h2 className="text-base font-semibold text-gray-900">Profile · {profile.title}</h2>
+              <button onClick={() => setProfile(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <ProfileTable profile={profile.data} />
+              {profile.data.suggested_rules.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-gray-800 mb-1">Checks we would suggest</p>
+                  <ul className="text-xs text-gray-600 space-y-1 list-disc pl-5">
+                    {profile.data.suggested_rules.map((r, i) => <li key={i}>{r.reason}</li>)}
+                  </ul>
+                  <p className="text-xs text-gray-400 mt-2">Add a <b>Quality Check</b> node after Load Data and click “Suggest checks from my data”.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {(preview || previewLoading) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPreview(null)}>

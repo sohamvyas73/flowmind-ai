@@ -23,6 +23,7 @@ export function Toolbar() {
     loadWorkflow,
     clearWorkflow,
     setPreviewSchemas,
+    setPreviewDatasetIds,
   } = useWorkflowStore();
 
   const { user, logout, setView } = useAuthStore();
@@ -36,7 +37,7 @@ export function Toolbar() {
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
-  const hasDataNodes = nodes.some(n => ['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode'].includes(n.type || ''));
+  const hasDataNodes = nodes.some(n => ['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode', 'qualityGateNode'].includes(n.type || ''));
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -106,9 +107,16 @@ export function Toolbar() {
         : await workflowApi.createWorkflow(payload);
       if (!workflowId) setWorkflowId(workflow.id);
       const result = await workflowApi.previewWorkflow(workflow.id);
-      const schemas: Record<string, { name: string; type: string }[]> = {};
-      result.nodes.forEach(n => { if (n.dataset) schemas[n.node_id] = n.dataset.columns.map(c => ({ name: c.name, type: c.type })); });
+      const schemas: Record<string, { name: string; type: string; pii?: boolean }[]> = {};
+      const ids: Record<string, string> = {};
+      result.nodes.forEach(n => {
+        if (n.dataset) {
+          schemas[n.node_id] = n.dataset.columns.map(c => ({ name: c.name, type: c.type, pii: c.tags.includes('pii') }));
+          ids[n.node_id] = n.dataset.id;
+        }
+      });
       setPreviewSchemas(schemas);
+      setPreviewDatasetIds(ids);
       setPreviewResult(result);
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;

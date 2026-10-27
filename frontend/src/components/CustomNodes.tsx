@@ -4,7 +4,7 @@ import {
   Database, Brain, CheckCircle, GitBranch, Send,
   Globe, Shuffle, UserCheck,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine,
-  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2,
+  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck,
 } from 'lucide-react';
 
 const nodeStyles = 'px-4 py-3 shadow-lg rounded-lg border-2 bg-white min-w-[160px]';
@@ -360,7 +360,25 @@ export const SqlNode = memo(({ data, selected }: NodeProps) => (
   </div>
 ));
 
+export const QualityGateNode = memo(({ data, selected }: NodeProps) => {
+  const n = Array.isArray(data.rules) ? data.rules.length : 0;
+  return (
+    <div className={`${nodeStyles} ${selected ? 'border-pink-500' : 'border-gray-300'}`}>
+      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-pink-500" />
+      <div className="flex items-center gap-2">
+        <ClipboardCheck className="w-5 h-5 text-pink-600" />
+        <div className="font-semibold text-sm">{data.label}</div>
+      </div>
+      <div className="text-xs text-gray-600 mt-1 bg-pink-50 px-2 py-1 rounded">
+        {n === 0 ? 'no checks yet' : `${n} check${n === 1 ? '' : 's'} · ${data.onFail === 'warn' ? 'warn only' : 'stop on fail'}`}
+      </div>
+      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-pink-500" />
+    </div>
+  );
+});
+
 LoadDataNode.displayName = 'LoadDataNode';
+QualityGateNode.displayName = 'QualityGateNode';
 CleanDataNode.displayName = 'CleanDataNode';
 CombineDataNode.displayName = 'CombineDataNode';
 SummariseDataNode.displayName = 'SummariseDataNode';

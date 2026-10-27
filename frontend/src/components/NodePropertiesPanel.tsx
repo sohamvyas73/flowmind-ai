@@ -755,7 +755,7 @@ export function NodePropertiesPanel() {
         )}
 
         {/* ═══════════════════ DATA NODES ═══════════════════ */}
-        {['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode'].includes(t || '') && (
+        {['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode', 'qualityGateNode'].includes(t || '') && (
           <DataNodeProperties node={selectedNode} data={data} up={up} />
         )}
 

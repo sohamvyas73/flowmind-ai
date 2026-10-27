@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     MAX_RESULT_ROWS: int = 1_000_000      # rows a SQL job may produce
     DRY_RUN_ROWS: int = 1000              # sample size for preview runs
     PREVIEW_RATE_LIMIT_PER_MIN: int = 20
+    # Lineage: events are always stored; set OPENLINEAGE_URL (e.g. http://marquez:5000) to also send them there
+    OPENLINEAGE_NAMESPACE: str = "flowmind"
+    OPENLINEAGE_URL: Optional[str] = None
+    OPENLINEAGE_API_KEY: Optional[str] = None
     DATASET_RETENTION_DAYS: int = 7       # run-produced datasets are deleted after this (0 = keep)
 
     ADMIN_EMAIL: Optional[str] = None

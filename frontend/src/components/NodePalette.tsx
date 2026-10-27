@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2 } from 'lucide-react';
+import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { healthCheck, configApi } from '@/services/api';
@@ -187,6 +187,15 @@ const nodeTypeList: NodeTypeConfig[] = [
     border: 'border-cyan-200',
     bg: 'bg-cyan-50',
     text: 'text-cyan-700',
+  },
+  {
+    type: 'qualityGateNode',
+    label: 'Quality Check',
+    description: 'Stop bad data early',
+    icon: ({ className }) => <ClipboardCheck className={className} />,
+    border: 'border-pink-200',
+    bg: 'bg-pink-50',
+    text: 'text-pink-700',
   },
   {
     type: 'sqlNode',

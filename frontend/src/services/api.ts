@@ -300,6 +300,87 @@ export interface DataUsage {
   max_upload_bytes: number;
 }
 
+// ── Quality, profiling, lineage (Phase 3) ──────────────────────────────────────
+
+export interface QualityRule {
+  id?: string;
+  type: 'not_null' | 'unique' | 'range' | 'allowed_values' | 'regex' | 'max_null_pct' | 'min_rows' | 'max_rows' | 'schema' | 'expression';
+  severity?: 'error' | 'warn';
+  column?: string;
+  columns?: string[];
+  min?: string | number;
+  max?: string | number;
+  values?: string[] | string;
+  pattern?: string;
+  value?: string | number;
+  expression?: string;
+  label?: string;
+  expected?: { name: string; type?: string }[];
+  allowExtra?: boolean;
+  reason?: string;
+}
+
+export interface QualityRuleResult {
+  id: string;
+  type: string;
+  description: string;
+  severity: 'error' | 'warn';
+  status: 'pass' | 'fail';
+  failed: number;
+  unit: string;
+  message: string;
+  examples: Record<string, unknown>[];
+  columns: string[];
+}
+
+export interface QualityReport {
+  passed: boolean;
+  total_rows: number;
+  checks: number;
+  failed_errors: number;
+  failed_warnings: number;
+  rules: QualityRuleResult[];
+  sql: string;
+}
+
+export interface ColumnProfile {
+  name: string;
+  type: string;
+  nulls: number;
+  null_pct: number;
+  distinct: number;
+  min?: string | null;
+  max?: string | null;
+  mean?: number | null;
+  pii: boolean;
+}
+
+export interface DataProfile {
+  total_rows: number;
+  columns: ColumnProfile[];
+  suggested_rules: QualityRule[];
+}
+
+export interface LineageStep {
+  node_id: string;
+  label: string;
+  node_type: string;
+  reads: { source: string; operation: string }[];
+  dataset_id?: string | null;
+  row_count?: number | null;
+  columns: number;
+  error?: string | null;
+  quality?: { passed: boolean; checks: number; failed_errors: number; failed_warnings: number } | null;
+}
+
+export interface RunLineage {
+  execution_id: string;
+  workflow?: string | null;
+  status: string;
+  steps: LineageStep[];
+  events: number;
+}
+
 export interface PreviewNode {
   node_id: string;
   node_type: string;
@@ -309,6 +390,7 @@ export interface PreviewNode {
   note?: string;
   sql?: string;
   dataset?: DatasetRef;
+  quality?: QualityReport;
 }
 
 export interface PreviewResult {
@@ -340,6 +422,8 @@ export const dataApi = {
   previewFile: async (id: string): Promise<DatasetRef> => (await api.get(`/data/files/${id}/preview`)).data,
   installExamples: async (): Promise<DataFile[]> => (await api.post('/data/examples')).data,
   listDatasets: async (): Promise<DatasetInfo[]> => (await api.get('/data/datasets')).data,
+  profileFile: async (id: string): Promise<DataProfile> => (await api.get(`/data/files/${id}/profile`)).data,
+  profileDataset: async (id: string): Promise<DataProfile> => (await api.get(`/data/datasets/${id}/profile`)).data,
   previewDataset: async (id: string): Promise<DatasetRef> => (await api.get(`/data/datasets/${id}/preview`)).data,
   deleteDataset: async (id: string): Promise<void> => { await api.delete(`/data/datasets/${id}`); },
   download: async (id: string, name: string, format: 'csv' | 'parquet'): Promise<void> => {
@@ -394,6 +478,15 @@ export interface Schedule {
   input_data?: Record<string, unknown> | null;
   created_at: string;
 }
+
+export const lineageApi = {
+  forRun: async (executionId: string): Promise<RunLineage> => (await api.get(`/lineage/runs/${executionId}`)).data,
+  events: async (executionId: string): Promise<unknown[]> => (await api.get(`/lineage/runs/${executionId}/events`)).data,
+  exportEvents: async (executionId: string): Promise<void> => {
+    const events = await lineageApi.events(executionId);
+    saveBlob(new Blob([JSON.stringify(events, null, 2)], { type: 'application/json' }), `openlineage-${executionId.slice(0, 8)}.json`);
+  },
+};
 
 export const runsApi = {
   start: async (workflowId: string, inputData?: Record<string, unknown>) =>
