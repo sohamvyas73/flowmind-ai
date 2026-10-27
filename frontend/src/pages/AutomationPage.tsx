@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, CalendarClock, Play, Loader2, XCircle, CheckCircle2, Clock, Ban, RefreshCw, Trash2,
-  Plus, ChevronDown, ChevronRight, AlertTriangle, Repeat, Power,
+  Plus, ChevronDown, ChevronRight, AlertTriangle, Repeat, Power, Network, Download,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
-import { runsApi, schedulesApi, workflowApi, RunDetail, RunSummary, Schedule } from '@/services/api';
+import { runsApi, schedulesApi, workflowApi, lineageApi, RunDetail, RunSummary, RunLineage, Schedule } from '@/services/api';
 import type { Workflow } from '@/types/workflow';
 
 function errMsg(e: unknown, fallback: string): string {
@@ -289,6 +289,45 @@ function RunDetails({ id, summary }: { id: string; summary: RunSummary }) {
         </div>
       )}
       {!detail.output_data && !detail.error_message && settled && <p className="text-gray-400">No output.</p>}
+      {settled && <LineageSection executionId={id} />}
+    </div>
+  );
+}
+
+function LineageSection({ executionId }: { executionId: string }) {
+  const [lineage, setLineage] = useState<RunLineage | null>(null);
+  useEffect(() => { lineageApi.forRun(executionId).then(setLineage).catch(() => setLineage(null)); }, [executionId]);
+  if (!lineage || lineage.steps.length === 0) return null;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <p className="font-semibold text-gray-700 flex items-center gap-1.5"><Network className="w-3.5 h-3.5" /> Data lineage</p>
+        <button onClick={() => lineageApi.exportEvents(executionId)} className="flex items-center gap-1 text-gray-500 hover:text-gray-800">
+          <Download className="w-3 h-3" /> OpenLineage JSON ({lineage.events} events)
+        </button>
+      </div>
+      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+        {lineage.steps.map(s => (
+          <div key={s.node_id} className="px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-gray-900">{s.label}</span>
+              <span className="text-gray-400 font-mono">{s.node_type.replace('Node', '')}</span>
+              {s.quality && (
+                <span className={`rounded-full px-2 py-0.5 ${s.quality.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {s.quality.passed ? `${s.quality.checks} checks passed` : `${s.quality.failed_errors} of ${s.quality.checks} checks failed`}
+                </span>
+              )}
+              <span className="ml-auto text-gray-500">
+                {s.row_count != null ? `${s.row_count.toLocaleString()} rows × ${s.columns} cols` : ''}
+              </span>
+            </div>
+            {s.reads.length > 0 && (
+              <p className="text-gray-500 mt-0.5">← {s.reads.map(r => r.source?.replace(/^dataset:(.{8}).*/, 'table $1…')).join(', ')}</p>
+            )}
+            {s.error && !s.quality && <p className="text-red-600 mt-0.5">{s.error}</p>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

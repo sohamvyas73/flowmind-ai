@@ -78,6 +78,8 @@ def purge_old_executions() -> int:
     db = SessionLocal()
     try:
         cutoff = datetime.utcnow() - timedelta(days=days)
+        from app.models.lineage import LineageEvent
+        db.query(LineageEvent).filter(LineageEvent.event_time < cutoff).delete()
         n = db.query(WorkflowExecution).filter(WorkflowExecution.started_at < cutoff).delete()
         db.commit()
         if n:

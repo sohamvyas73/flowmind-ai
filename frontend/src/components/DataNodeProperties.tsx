@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Node } from 'reactflow';
 import { Plus, Trash2, Lightbulb } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { connectionsApi, dataApi, Connection, DataFile, DiscoveredTable } from '@/services/api';
+import { connectionsApi, dataApi, Connection, DataFile, DiscoveredTable, QualityRule } from '@/services/api';
 import { Field, Select, TextArea, inp } from './NodePropertiesPanel';
 
 type Data = Record<string, unknown>;
@@ -15,17 +15,18 @@ const slug = (label: string) => {
 
 /** Columns coming into the selected node (one list per connected input, in edge order), from the last data preview. */
 function useUpstream(node: Node) {
-  const { edges, nodes, previewSchemas } = useWorkflowStore();
+  const { edges, nodes, previewSchemas, previewDatasetIds } = useWorkflowStore();
   return useMemo(() => {
     return edges.filter(e => e.target === node.id).map(e => {
       const src = nodes.find(n => n.id === e.source);
       return {
         id: e.source,
         label: String((src?.data as Data | undefined)?.label ?? e.source),
-        columns: previewSchemas[e.source] ?? [],
+        columns: (previewSchemas[e.source] ?? []) as { name: string; type: string; pii?: boolean }[],
+        datasetId: previewDatasetIds[e.source],
       };
     });
-  }, [edges, nodes, previewSchemas, node.id]);
+  }, [edges, nodes, previewSchemas, previewDatasetIds, node.id]);
 }
 
 const NoSchemaHint = () => (
@@ -103,6 +104,7 @@ export function DataNodeProperties({ node, data, up }: { node: Node; data: Data;
     case 'combineDataNode': return <CombineProps node={node} data={data} up={up} />;
     case 'summariseDataNode': return <SummariseProps node={node} data={data} up={up} />;
     case 'sqlNode': return <SqlProps node={node} data={data} up={up} />;
+    case 'qualityGateNode': return <QualityProps node={node} data={data} up={up} />;
     default: return null;
   }
 }
@@ -220,6 +222,7 @@ function CleanProps({ node, data, up }: PropsBase & { node: Node }) {
   const fills = arr<{ column: string; value: string }>(data.fillMissing);
   const renames = arr<{ from: string; to: string }>(data.rename);
   const tc = (data.textCase as { columns?: string[]; mode?: string } | undefined) ?? {};
+  const protects = arr<{ column: string; method: string }>(data.protect);
 
   return (
     <>
@@ -248,6 +251,38 @@ function CleanProps({ node, data, up }: PropsBase & { node: Node }) {
             </div>
           ))}
           <AddBtn label="Add" onClick={() => up('fillMissing', [...fills, { column: '', value: '' }])} />
+        </div>
+      </Field>
+
+      <Field label="Protect personal data">
+        <div className="space-y-2">
+          {cols.some(c => c.pii) && protects.length === 0 && (
+            <button
+              onClick={() => up('protect', cols.filter(c => c.pii).map(c => ({ column: c.name, method: 'hash' })))}
+              className="text-xs text-cyan-700 underline text-left"
+            >
+              Personal data detected in: {cols.filter(c => c.pii).map(c => c.name).join(', ')} — protect them
+            </button>
+          )}
+          {protects.map((p, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <div className="flex-1"><ColumnSelect value={p.column} options={names} onChange={v => up('protect', protects.map((x, j) => j === i ? { ...x, column: v } : x))} /></div>
+              <select value={p.method} onChange={e => up('protect', protects.map((x, j) => j === i ? { ...x, method: e.target.value } : x))}
+                className={`${inp('focus:ring-cyan-500')} w-28`}>
+                <option value="hash">hash</option>
+                <option value="mask">mask (last 4)</option>
+                <option value="redact">redact</option>
+                <option value="blank">blank out</option>
+              </select>
+              <RemoveBtn onClick={() => up('protect', protects.filter((_, j) => j !== i))} />
+            </div>
+          ))}
+          <AddBtn label="Add" onClick={() => up('protect', [...protects, { column: '', method: 'hash' }])} />
+          {protects.some(p => p.method === 'hash') && (
+            <input type="text" value={(data.hashSalt as string) || ''} onChange={e => up('hashSalt', e.target.value)}
+              placeholder="optional secret salt for hashes" className={`${inp('focus:ring-cyan-500')} font-mono`} />
+          )}
+          <p className="text-xs text-gray-400">Hashes are one-way but guessable for short values like phone numbers — add a salt.</p>
         </div>
       </Field>
 
@@ -427,3 +462,199 @@ function SqlProps({ node, data, up }: PropsBase & { node: Node }) {
   );
 }
 
+
+// ── Quality Check ───────────────────────────────────────────────────────────────
+
+const RULE_LABELS: Record<QualityRule['type'], string> = {
+  not_null: 'Never empty',
+  unique: 'No duplicates',
+  range: 'Number / date in range',
+  allowed_values: 'Only these values',
+  regex: 'Matches a pattern',
+  max_null_pct: 'At most N% empty',
+  min_rows: 'At least N rows',
+  max_rows: 'At most N rows',
+  schema: 'Columns match a contract',
+  expression: 'Custom condition (SQL)',
+};
+
+function newRule(type: QualityRule['type']): QualityRule {
+  switch (type) {
+    case 'not_null': return { type, columns: [] };
+    case 'unique': return { type, columns: [] };
+    case 'range': return { type, column: '', min: '', max: '' };
+    case 'allowed_values': return { type, column: '', values: '' };
+    case 'regex': return { type, column: '', pattern: '' };
+    case 'max_null_pct': return { type, column: '', max: 5 };
+    case 'min_rows': return { type, value: 1 };
+    case 'max_rows': return { type, value: 1000000 };
+    case 'schema': return { type, expected: [], allowExtra: true };
+    default: return { type: 'expression', expression: '', label: '' };
+  }
+}
+
+function valuesText(v: QualityRule['values']): string {
+  return Array.isArray(v) ? v.join(', ') : v ?? '';
+}
+
+function QualityProps({ node, data, up }: PropsBase & { node: Node }) {
+  const upstream = useUpstream(node);
+  const cols = upstream[0]?.columns ?? [];
+  const names = cols.map(c => c.name);
+  const rules = arr<QualityRule>(data.rules);
+  const [suggestions, setSuggestions] = useState<QualityRule[] | null>(null);
+  const [picked, setPicked] = useState<Record<number, boolean>>({});
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const datasetId = upstream[0]?.datasetId;
+
+  const setRule = (i: number, patch: Partial<QualityRule>) => up('rules', rules.map((r, j) => j === i ? { ...r, ...patch } : r));
+
+  const suggest = async () => {
+    if (!datasetId) return;
+    setLoading(true); setErr('');
+    try {
+      const p = await dataApi.profileDataset(datasetId);
+      setSuggestions(p.suggested_rules);
+      setPicked(Object.fromEntries(p.suggested_rules.map((_, i) => [i, true])));
+    } catch {
+      setErr('Could not profile the data. Run Preview data again.');
+    } finally { setLoading(false); }
+  };
+  const addPicked = () => {
+    const add = (suggestions ?? []).filter((_, i) => picked[i]).map(({ reason: _reason, ...r }) => r as QualityRule);
+    up('rules', [...rules, ...add]);
+    setSuggestions(null);
+  };
+
+  return (
+    <>
+      <Tip>Checks run on the table coming in. If one fails, the run <b>stops</b> (or only warns) and tells you exactly what was wrong, with example rows.</Tip>
+
+      <Field label="When a check fails">
+        <Select value={(data.onFail as string) || 'stop'} onChange={v => up('onFail', v)} ring="focus:ring-cyan-500">
+          <option value="stop">Stop the run</option>
+          <option value="warn">Keep going, just report it</option>
+        </Select>
+      </Field>
+
+      <div className="space-y-2">
+        {rules.map((r, i) => (
+          <div key={i} className="border border-gray-200 rounded p-2 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-pink-700 flex-1">{RULE_LABELS[r.type]}</span>
+              <select value={r.severity || 'error'} onChange={e => setRule(i, { severity: e.target.value as 'error' | 'warn' })}
+                className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white">
+                <option value="error">must pass</option>
+                <option value="warn">warn only</option>
+              </select>
+              <RemoveBtn onClick={() => up('rules', rules.filter((_, j) => j !== i))} />
+            </div>
+            <RuleFields rule={r} names={names} set={p => setRule(i, p)} />
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <select value="" onChange={e => e.target.value && up('rules', [...rules, newRule(e.target.value as QualityRule['type'])])}
+          className={`${inp('focus:ring-pink-500')} flex-1`}>
+          <option value="">+ Add a check…</option>
+          {Object.entries(RULE_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+      </div>
+
+      <button onClick={suggest} disabled={!datasetId || loading}
+        className="text-xs font-medium text-pink-700 hover:underline disabled:text-gray-400 disabled:no-underline text-left">
+        {loading ? 'Looking at your data…' : datasetId ? '✨ Suggest checks from my data' : '✨ Suggest checks (run Preview data first)'}
+      </button>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      {suggestions && (
+        <div className="border border-pink-200 bg-pink-50/50 rounded p-2 space-y-1.5">
+          <p className="text-xs font-semibold text-pink-800">Suggested checks — untick any you don&apos;t want</p>
+          {suggestions.map((s, i) => (
+            <label key={i} className="flex gap-2 text-xs text-gray-700">
+              <input type="checkbox" checked={!!picked[i]} onChange={e => setPicked(p => ({ ...p, [i]: e.target.checked }))} />
+              <span><b>{RULE_LABELS[s.type]}</b>{s.column ? ` · ${s.column}` : s.columns?.length ? ` · ${s.columns.join(', ')}` : ''}
+                <span className="block text-gray-500">{s.reason}</span></span>
+            </label>
+          ))}
+          <div className="flex gap-2 pt-1">
+            <button onClick={addPicked} className="px-2.5 py-1 text-xs font-medium text-white bg-pink-600 rounded hover:bg-pink-700">Add selected</button>
+            <button onClick={() => setSuggestions(null)} className="px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function RuleFields({ rule, names, set }: { rule: QualityRule; names: string[]; set: (p: Partial<QualityRule>) => void }) {
+  const small = `${inp('focus:ring-pink-500')} font-mono text-xs`;
+  switch (rule.type) {
+    case 'not_null':
+    case 'unique':
+      return <ColumnsInput value={rule.columns ?? (rule.column ? [rule.column] : [])} options={names} onChange={v => set({ columns: v, column: undefined })} />;
+    case 'range':
+      return (
+        <>
+          <ColumnSelect value={rule.column ?? ''} options={names} onChange={v => set({ column: v })} />
+          <div className="flex gap-1.5">
+            <input type="text" value={rule.min ?? ''} placeholder="min" onChange={e => set({ min: e.target.value })} className={small} />
+            <input type="text" value={rule.max ?? ''} placeholder="max" onChange={e => set({ max: e.target.value })} className={small} />
+          </div>
+          <p className="text-[11px] text-gray-400">Numbers, or dates like 2026-03-31. Leave one side blank for “at least / at most”.</p>
+        </>
+      );
+    case 'allowed_values':
+      return (
+        <>
+          <ColumnSelect value={rule.column ?? ''} options={names} onChange={v => set({ column: v })} />
+          <input type="text" value={valuesText(rule.values)} placeholder="delivered, shipped, cancelled" onChange={e => set({ values: e.target.value })} className={small} />
+        </>
+      );
+    case 'regex':
+      return (
+        <>
+          <ColumnSelect value={rule.column ?? ''} options={names} onChange={v => set({ column: v })} />
+          <input type="text" value={rule.pattern ?? ''} placeholder="^\d{4}-\d{2}-\d{2}$" onChange={e => set({ pattern: e.target.value })} className={small} />
+        </>
+      );
+    case 'max_null_pct':
+      return (
+        <div className="flex gap-1.5 items-center">
+          <div className="flex-1"><ColumnSelect value={rule.column ?? ''} options={names} onChange={v => set({ column: v })} /></div>
+          <input type="number" min={0} max={100} value={rule.max ?? ''} onChange={e => set({ max: e.target.value })} className={`${small} w-16`} />
+          <span className="text-xs text-gray-500">%</span>
+        </div>
+      );
+    case 'min_rows':
+    case 'max_rows':
+      return <input type="number" min={0} value={rule.value ?? ''} onChange={e => set({ value: e.target.value })} className={small} />;
+    case 'schema':
+      return (
+        <>
+          <textarea
+            rows={4} className={small} placeholder={'order_id: integer\nstatus: text\nunit_price: number'}
+            value={(rule.expected ?? []).map(e => e.type ? `${e.name}: ${e.type}` : e.name).join('\n')}
+            onChange={e => set({ expected: e.target.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+              const [name, type] = l.split(':').map(x => x.trim());
+              return type ? { name, type } : { name };
+            }) })}
+          />
+          <label className="flex items-center gap-2 text-xs text-gray-600">
+            <input type="checkbox" checked={rule.allowExtra !== false} onChange={e => set({ allowExtra: e.target.checked })} /> Allow extra columns
+          </label>
+          <p className="text-[11px] text-gray-400">One per line. Types: integer, number, text, boolean, date, timestamp (optional).</p>
+        </>
+      );
+    default:
+      return (
+        <>
+          <textarea rows={2} className={small} value={rule.expression ?? ''} placeholder="quantity * unit_price > 0"
+            onChange={e => set({ expression: e.target.value })} />
+          <input type="text" value={rule.label ?? ''} placeholder="Name for this check (optional)" onChange={e => set({ label: e.target.value })} className={inp('focus:ring-pink-500')} />
+          <p className="text-[11px] text-gray-400">Must be TRUE for every row (SQL expression over the columns).</p>
+        </>
+      );
+  }
+}

@@ -117,6 +117,25 @@ async def preview_file(
         raise
 
 
+@router.get("/files/{file_id}/profile")
+async def profile_file(file_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Per-column stats (empty / distinct / min / max) and suggested quality checks."""
+    try:
+        f = ds.get_file(db, user.id, file_id=str(file_id))
+        return await ds.profile_data(user.id, storage.path_for(f.storage_key), f.format, f.columns or [])
+    except DataError as e:
+        _fail(e, 404)
+
+
+@router.get("/datasets/{dataset_id}/profile")
+async def profile_dataset(dataset_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    try:
+        d = ds.get_dataset(db, user.id, dataset_id)
+        return await ds.profile_data(user.id, storage.path_for(d.storage_key), "parquet", d.columns or [])
+    except DataError as e:
+        _fail(e, 404)
+
+
 @router.post("/examples", response_model=List[FileInfo])
 async def install_examples(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Copy the bundled example CSVs into the user's files (skips ones they already have)."""

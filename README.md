@@ -57,6 +57,7 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 - **Token-based credit billing** — AI nodes charge 1 credit per 1,000 tokens consumed; non-AI nodes use flat rates; users who supply their own API key are never charged credits
 - **Admin credit management** — add, subtract, set, or reset credits per user from the admin panel; full raw transaction log with per-execution breakdown
 - **Data pipelines** — load files or database tables, clean, join, summarise or query them with SQL, preview every step for free, and save results (see the [beginner guide](docs/data-pipelines-guide.md))
+- **Data quality & trust** — quality gates that stop bad data, personal-data detection by name *and* value, hash/mask/redact, column profiling with suggested checks, and standard OpenLineage lineage for every run
 - **Background runs, schedules and connections** — async runs with retries, cron schedules, encrypted read-only database connections
 - **Docker Compose** — the entire stack starts with one command
 
@@ -85,6 +86,7 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 | Combine | Cyan | Join two tables (inner / left / right / full) |
 | Summarise | Cyan | Group by, then count / sum / average / min / max / median |
 | SQL | Cyan | One sandboxed `SELECT` over the connected tables (DuckDB) |
+| Quality Check | Pink | Rules on the table (not empty, unique, range, allowed values, pattern, schema…) that stop the run or warn, with example rows |
 
 ---
 
@@ -267,6 +269,7 @@ Full API docs: [docs/api-reference.md](docs/api-reference.md)
 | [Execution Engine](docs/execution-engine.md) | How conditional routing works internally |
 | [Data Pipelines Guide](docs/data-pipelines-guide.md) | **Start here for data**: beginner-friendly tutorials with real example outputs |
 | [Data Engine (technical)](docs/phase2-data-engine.md) | DuckDB isolation, storage, preview, billing, API and configuration |
+| [Quality, PII & Lineage (technical)](docs/phase3-trust-and-lineage.md) | Quality rules, PII detection, profiling, OpenLineage events and how to send them to Marquez/DataHub |
 | [Foundation: jobs, schedules, connections](docs/phase1-foundation.md) | Job queue, background runs, cron schedules, database connections |
 | [Data & ML Platform Design](docs/data-engineering-platform.md) | The roadmap and architecture for data engineering, RAG and ML |
 | [Security Audit](docs/SECURITY_AUDIT.md) | Findings and how each was addressed |
@@ -276,7 +279,7 @@ Full API docs: [docs/api-reference.md](docs/api-reference.md)
 
 ## Sample Workflows
 
-Nine workflows are included and loadable from the Node Palette sidebar (the four **Data:** ones need the example files: *Data → Load example data*):
+Eleven workflows are included and loadable from the Node Palette sidebar (the six **Data:** ones need the example files: *Data → Load example data*):
 
 | Name | Nodes used |
 |---|---|
@@ -289,6 +292,8 @@ Nine workflows are included and loadable from the Node Palette sidebar (the four
 | **Data: Sales by region** | Load Data → Summarise |
 | **Data: Orders + customers (join)** | Load Data ×2 → Combine → SQL |
 | **Data: Top products (SQL)** | Load Data → SQL |
+| **Data: Quality gate on dirty orders** | Load Data → Quality Check → Summarise |
+| **Data: Protect personal data** | Load Data → Clean (protect) → SQL |
 
 ---
 

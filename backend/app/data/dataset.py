@@ -11,6 +11,8 @@ from typing import Any, Dict, Iterable, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from app.data.pii import detect_kind
+
 SAMPLE_ROWS = 100
 MAX_SAMPLE_ROWS = 1000
 MAX_CELL_CHARS = 200
@@ -39,8 +41,11 @@ class ColumnStats(BaseModel):
 
 
 class LineageEdge(BaseModel):
-    source: str          # e.g. "connection:<id>/public.orders"
+    source: str          # e.g. "file:orders.csv", "dataset:<id>", "connection:<name>/public.orders"
     operation: str = "read"
+    # OpenLineage dataset identity for external sources (set by the loader; lets lineage events name real systems)
+    namespace: Optional[str] = None
+    name: Optional[str] = None
 
 
 class DatasetLocation(BaseModel):
@@ -105,7 +110,14 @@ def build_dataset(
 ) -> DatasetRef:
     """Assemble a DatasetRef: tags PII columns, caps and redacts the sample, computes simple stats."""
     sample_limit = max(0, min(sample_limit, MAX_SAMPLE_ROWS))
-    cols = [c.model_copy(update={"tags": tag_column(c.name, c.tags)}) for c in columns]
+    cols = []
+    for c in columns:
+        tags = tag_column(c.name, c.tags)
+        if "pii" not in tags:  # name looked harmless: look at the values (before they are masked)
+            pii_kind = detect_kind(r.get(c.name) for r in rows[:sample_limit])
+            if pii_kind:
+                tags += ["pii", f"pii:{pii_kind}"]
+        cols.append(c.model_copy(update={"tags": tags}))
     pii = {c.name for c in cols if "pii" in c.tags}
 
     sample = [

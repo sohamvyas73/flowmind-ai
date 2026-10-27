@@ -11,6 +11,7 @@ from app.api import admin as admin_router
 from app.api import config as config_router
 from app.api import connections as connections_router
 from app.api import data as data_router
+from app.api import lineage as lineage_router
 from app.api import runs as runs_router
 from app.api import schedules as schedules_router
 from app.core import maintenance
@@ -22,6 +23,7 @@ from app.models import job as _job_models      # noqa: F401
 from app.models import schedule as _schedule_models  # noqa: F401
 from app.models import connection as _connection_models  # noqa: F401
 from app.models import data as _data_models    # noqa: F401
+from app.models import lineage as _lineage_models  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
@@ -158,6 +160,7 @@ app.include_router(admin_router.router,  prefix=f"{settings.API_V1_STR}/admin", 
 app.include_router(config_router.router, prefix=f"{settings.API_V1_STR}/config",    tags=["config"])
 app.include_router(connections_router.router, prefix=f"{settings.API_V1_STR}/connections", tags=["connections"])
 app.include_router(data_router.router,      prefix=f"{settings.API_V1_STR}/data",        tags=["data"])
+app.include_router(lineage_router.router,  prefix=f"{settings.API_V1_STR}/lineage",     tags=["lineage"])
 app.include_router(runs_router.router,      prefix=f"{settings.API_V1_STR}/runs",        tags=["runs"])
 app.include_router(schedules_router.router, prefix=f"{settings.API_V1_STR}/schedules",   tags=["schedules"])
 app.include_router(workflows.router,     prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"])

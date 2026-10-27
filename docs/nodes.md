@@ -1,6 +1,6 @@
 # Node Reference
 
-Complete reference for all 14 workflow node types, plus the 5 [data nodes](#data-nodes). Each section covers what the node does, every configuration field, the structure of its output, and a practical example.
+Complete reference for all 14 workflow node types, plus the 6 [data nodes](#data-nodes). Each section covers what the node does, every configuration field, the structure of its output, and a practical example.
 
 ---
 
@@ -733,7 +733,7 @@ internals, see [phase2-data-engine.md](phase2-data-engine.md).
   `columns` (names), `sql` (the query that produced it).
 - Connect data nodes to each other; downstream JSON nodes (Rule, Switch, AI, Formatter, HTTP…) can read `dataset.sample`.
 - **Preview data** runs them on a ≤1,000-row sample for free; **Execute** runs everything and saves the tables.
-- Credits: Load 1 · Clean 1 · Summarise 1 · Combine 2 · SQL 2, plus 1 per 100 MB scanned / 30 s of compute.
+- Credits: Load 1 · Clean 1 · Summarise 1 · Quality Check 1 · Combine 2 · SQL 2, plus 1 per 100 MB scanned / 30 s of compute.
 
 ### 15. Load Data Node
 
@@ -744,7 +744,7 @@ internals, see [phase2-data-engine.md](phase2-data-engine.md).
 
 **Handles:** target (left), source (right). **Config:** `trimAll`, `removeDuplicates`, `dropMissing` (columns),
 `fillMissing` (`[{column, value}]`), `textCase` (`{columns, mode: lower|upper}`), `rename` (`[{from, to}]`),
-`keepColumns`.
+`keepColumns`, `protect` (`[{column, method: hash|mask|redact|blank}]`) with optional `hashSalt`.
 
 ### 17. Combine Node
 
@@ -760,3 +760,11 @@ internals, see [phase2-data-engine.md](phase2-data-engine.md).
 
 **Handles:** target (left, one or more), source (right). **Config:** `query` — exactly one `SELECT`. Tables: `input`,
 `input2`…, and a slug of each upstream node's label. No files or network; stopped after `ENGINE_TIMEOUT_S`.
+
+### 20. Quality Check Node
+
+**Handles:** target (left), source (right). **Config:** `rules` (list; types `not_null`, `unique`, `range`,
+`allowed_values`, `regex`, `max_null_pct`, `min_rows`, `max_rows`, `schema`, `expression`; each with optional
+`severity: error|warn`) and `onFail` (`stop` | `warn`). The incoming table passes through unchanged; the output adds
+`quality` (`passed`, `rules[]` with `failed`, `message`, `examples`, `sql`). See
+[phase3-trust-and-lineage.md](phase3-trust-and-lineage.md#quality-rules).

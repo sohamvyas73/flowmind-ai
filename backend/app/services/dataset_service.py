@@ -14,6 +14,7 @@ from app.core.database import SessionLocal
 from app.data.dataset import Column, DatasetLocation, DatasetRef, LineageEdge, build_dataset
 from app.engine.duckdb_engine import EngineError, EngineInput, run_sql
 from app.models.data import DataFile, Dataset
+from app.services import profile as profile_service
 from app.storage.local import StorageError, storage, tenant_key
 
 ALLOWED_FORMATS = {".csv": "csv", ".tsv": "tsv", ".json": "json", ".jsonl": "jsonl", ".ndjson": "jsonl", ".parquet": "parquet"}
@@ -208,3 +209,16 @@ def default_expiry(dry_run: bool) -> Optional[datetime]:
         return datetime.utcnow() + timedelta(days=1)
     days = settings.DATASET_RETENTION_DAYS
     return datetime.utcnow() + timedelta(days=days) if days > 0 else None
+
+
+async def profile_data(user_id: Any, path: str, fmt: str, columns: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Column statistics + suggested checks. Personal-data columns (by name or by value) never expose min/max/values."""
+    out_dir = storage.path_for(tenant_key(user_id, "tmp"))
+    os.makedirs(out_dir, exist_ok=True)
+    probe = os.path.join(out_dir, f"{uuid.uuid4()}.s.parquet")
+    info = await sample_of(path, fmt, 100, probe)
+    ref = make_ref(columns or info["columns"], info["sample"], row_count=info["total_rows"], size_bytes=None)
+    try:
+        return await profile_service.profile(path, fmt, columns or info["columns"], out_dir, pii=set(ref.pii_columns()))
+    except EngineError as e:
+        raise DataError(str(e))

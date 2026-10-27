@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, CheckCircle2, XCircle, MinusCircle, Copy, Check, FlaskConical } from 'lucide-react';
-import type { PreviewResult, PreviewNode } from '@/services/api';
+import { dataApi, type PreviewResult, type PreviewNode, type DataProfile } from '@/services/api';
 import { DatasetTable } from './DatasetTable';
+import { QualityReportView, ProfileTable } from './QualityViews';
 
 /** Result of a sample run: per node status, schema + sample rows, and the SQL each data node compiled to. */
 export function PreviewModal({ result, onClose }: { result: PreviewResult; onClose: () => void }) {
   const dataNodes = result.nodes.filter(n => n.status !== 'skipped' || n.dataset);
   const [openId, setOpenId] = useState<string | null>(
-    result.nodes.find(n => n.status === 'error')?.node_id ?? [...result.nodes].reverse().find(n => n.dataset)?.node_id ?? null,
+    result.nodes.find(n => n.status === 'error')?.node_id
+      ?? result.nodes.find(n => n.quality && !n.quality.passed)?.node_id          // surface failed checks first
+      ?? [...result.nodes].reverse().find(n => n.dataset)?.node_id ?? null,
   );
 
   return createPortal(
@@ -50,9 +53,17 @@ export function PreviewModal({ result, onClose }: { result: PreviewResult; onClo
 
 function StepCard({ node, open, onToggle }: { node: PreviewNode; open: boolean; onToggle: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [profile, setProfile] = useState<DataProfile | null>(null);
+  const [profiling, setProfiling] = useState(false);
   const icon = node.status === 'ok' ? <CheckCircle2 className="w-4 h-4 text-green-600" />
     : node.status === 'error' ? <XCircle className="w-4 h-4 text-red-600" /> : <MinusCircle className="w-4 h-4 text-gray-400" />;
   const ds = node.dataset;
+
+  const runProfile = async () => {
+    if (!node.dataset) return;
+    setProfiling(true);
+    try { setProfile(await dataApi.profileDataset(node.dataset.id)); } catch { setProfile(null); } finally { setProfiling(false); }
+  };
 
   const copy = async () => {
     if (!node.sql) return;
@@ -76,6 +87,7 @@ function StepCard({ node, open, onToggle }: { node: PreviewNode; open: boolean; 
       {open && (
         <div className="px-4 pb-4 space-y-3">
           {node.error && <p className="text-sm text-red-600">{node.error}</p>}
+          {node.quality && <QualityReportView report={node.quality} />}
           {node.note && <p className="text-xs text-gray-500">{node.note}</p>}
           {node.sql && (
             <div>
@@ -89,6 +101,16 @@ function StepCard({ node, open, onToggle }: { node: PreviewNode; open: boolean; 
             </div>
           )}
           {ds && <DatasetTable dataset={ds} maxHeight="40vh" />}
+          {ds && !node.quality && (
+            <div>
+              {!profile && (
+                <button onClick={runProfile} disabled={profiling} className="text-xs font-medium text-cyan-700 hover:underline disabled:opacity-50">
+                  {profiling ? 'Profiling…' : 'Profile columns (empty values, ranges, distinct counts)'}
+                </button>
+              )}
+              {profile && <ProfileTable profile={profile} />}
+            </div>
+          )}
         </div>
       )}
     </div>

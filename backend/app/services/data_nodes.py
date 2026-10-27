@@ -10,6 +10,7 @@ small, PII-masked ``dataset`` preview (schema + sample rows).
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
 from dataclasses import dataclass
@@ -25,12 +26,13 @@ from app.engine.duckdb_engine import EngineError, EngineInput, qi, run_sql
 from app.models.connection import Connection
 from app.models.data import Dataset
 from app.services import dataset_service as ds
+from app.services import quality
 from app.services.dataset_service import DataError
 from app.storage.local import StorageError, storage, tenant_key
 
 logger = logging.getLogger(__name__)
 
-DATA_NODE_TYPES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode"}
+DATA_NODE_TYPES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode"}
 _NUMERIC_PREFIXES = ("TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER",
                      "UBIGINT", "UHUGEINT", "FLOAT", "DOUBLE", "DECIMAL", "REAL")
 _SAFE_TYPE = re.compile(r"^[A-Za-z0-9_(), ]+$")
@@ -143,6 +145,30 @@ def compile_clean(cfg: Dict[str, Any], cols: List[Dict[str, Any]], src: str = "i
                 parts.append(f"COALESCE({q}, CAST({_lit(v)} AS {t})) AS {q}")
         add("SELECT * REPLACE (" + ", ".join(parts) + ") FROM {prev}")
 
+    # 4b. protect personal data (hash / mask / redact / blank)
+    protects = [p for p in (cfg.get("protect") or []) if p.get("column")]
+    if protects:
+        parts = []
+        for p in protects:
+            c = _need(types, p["column"])
+            q, method = qi(c), p.get("method", "hash")
+            as_text = f"CAST({q} AS VARCHAR)"
+            if method == "hash":
+                salt = str(cfg.get("hashSalt") or "")
+                expr = f"sha256({_lit(salt)} || {as_text})" if salt else f"sha256({as_text})"
+            elif method == "mask":
+                expr = f"CASE WHEN {q} IS NULL THEN NULL ELSE repeat('*', greatest(length({as_text}) - 4, 0)) || right({as_text}, 4) END"
+            elif method == "redact":
+                expr = f"CASE WHEN {q} IS NULL THEN NULL ELSE '[REMOVED]' END"
+            elif method == "blank":
+                if not _SAFE_TYPE.match(types[c]):
+                    raise DataNodeError(f"Cannot blank '{c}' (unsupported type {types[c]})")
+                expr = f"CAST(NULL AS {types[c]})"
+            else:
+                raise DataNodeError(f"Unknown way to protect '{c}': {method}. Use hash, mask, redact or blank")
+            parts.append(f"{expr} AS {q}")
+        add("SELECT * REPLACE (" + ", ".join(parts) + ") FROM {prev}")
+
     # 5. remove duplicate rows
     if cfg.get("removeDuplicates"):
         add("SELECT DISTINCT * FROM {prev}")
@@ -253,6 +279,7 @@ class Upstream:
     label: str
     dataset_id: str
     columns: List[Dict[str, Any]]
+    result: Dict[str, Any]
 
 
 def _user_id(context: Dict[str, Any]):
@@ -268,7 +295,7 @@ def _upstreams(context: Dict[str, Any]) -> List[Upstream]:
     for src in context.get("_incoming", {}).get(node_id, []):
         r = (context.get("_outputs") or {}).get(src) or {}
         if r.get("dataset_id"):
-            out.append(Upstream(src, context.get("_labels", {}).get(src, src), r["dataset_id"], r["dataset"]["columns"]))
+            out.append(Upstream(src, context.get("_labels", {}).get(src, src), r["dataset_id"], r["dataset"]["columns"], r))
     return out
 
 
@@ -372,7 +399,8 @@ async def run_load(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[s
         sql = f"SELECT * FROM src LIMIT {limit}"
         return await _materialise(
             context, sql=sql, inputs=[EngineInput("src", path, fmt)],
-            lineage=[LineageEdge(source=f"file:{name}", operation="read")], label=label,
+            lineage=[LineageEdge(source=f"file:{name}", operation="read", namespace="flowmind://files", name=name)],
+            label=label,
         )
 
     if source == "connection":
@@ -411,7 +439,10 @@ async def run_load(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[s
         return await _register(
             context, ds_id=ds_id, key=key, label=label, sql=f"-- loaded {rows:,} rows from {conn_name}: {schema}.{table}",
             columns=info["columns"], sample=info["sample"], row_count=rows, out_bytes=storage.size(key),
-            lineage=[LineageEdge(source=f"connection:{conn_name}/{schema}.{table}", operation="read")],
+            lineage=[LineageEdge(
+                source=f"connection:{conn_name}/{schema}.{table}", operation="read",
+                namespace=f"postgres://{config.get('host')}:{config.get('port', 5432)}",
+                name=f"{config.get('database')}.{schema}.{table}")],
             usage={"compute_s": 0, "scanned_bytes": storage.size(key), "scanned_rows": rows},
             extra=None, node_id=context.get("current_node_id", ""),
         )
@@ -490,3 +521,35 @@ async def run_sql_node(node_data: Dict[str, Any], context: Dict[str, Any]) -> Di
         label=node_data.get("label") or "SQL",
         extra={"tables": [i.alias for i in inputs]},
     )
+
+
+@_guard
+async def run_quality_gate(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    """Check the incoming table. The table itself passes through unchanged (no copy); a `quality` report is added."""
+    user_id = _user_id(context)
+    up, path = await asyncio.to_thread(_one, context, "Quality check")
+    label = node_data.get("label") or "Quality check"
+    out_dir = storage.path_for(tenant_key(user_id, "tmp"))
+    os.makedirs(out_dir, exist_ok=True)
+    try:
+        report = await quality.evaluate(node_data.get("rules"), up.columns, path, out_dir)
+    except quality.QualityConfigError as e:
+        raise DataNodeError(str(e))
+
+    base = {
+        "dataset_id": up.dataset_id,
+        "dataset": up.result["dataset"],
+        "row_count": up.result.get("row_count"),
+        "columns": up.result.get("columns"),
+        "sql": report["sql"],
+        "quality": report,
+        "_usage": report["usage"],
+        "dry_run": bool(context.get("_dry_run")),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    on_fail = node_data.get("onFail", "stop")
+    if on_fail not in ("stop", "warn"):
+        raise DataNodeError("'When a check fails' must be 'stop' or 'warn'")
+    if not report["passed"] and on_fail == "stop":
+        base["error"] = quality.summarise(report, label)
+    return base

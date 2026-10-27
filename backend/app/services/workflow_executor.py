@@ -872,6 +872,9 @@ class NodeExecutor:
     async def execute_summarise_data_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         return await data_nodes.run_summarise(node_data, context)
 
+    async def execute_quality_gate_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await data_nodes.run_quality_gate(node_data, context)
+
     async def execute_sql_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         return await data_nodes.run_sql_node(node_data, context)
 
@@ -1490,6 +1493,7 @@ class WorkflowExecutor:
             "combineDataNode":   self.node_executor.execute_combine_data_node,
             "summariseDataNode": self.node_executor.execute_summarise_data_node,
             "sqlNode":           self.node_executor.execute_sql_node,
+            "qualityGateNode":   self.node_executor.execute_quality_gate_node,
         }
         if context.get("_dry_run") and node_type not in DRY_RUN_NODE_TYPES:
             # Preview mode never calls paid or side-effecting services (AI, HTTP, KYC, code, review)
