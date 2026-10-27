@@ -356,6 +356,23 @@ List all executions for a specific workflow.
 
 ---
 
+## Retrieval (RAG) — `/api/v1/rag`
+
+Explicit setup, document library, collections, indexing and search. Full table in [phase4-retrieval.md](phase4-retrieval.md).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/rag/catalog` | Supported embedders and vector stores (with Docker commands) |
+| GET / PUT / DELETE | `/rag/settings` | Read, save-and-test, or clear your setup (no defaults) |
+| POST | `/rag/settings/test` | Re-run both connection tests |
+| GET / POST / DELETE | `/rag/files` | Document library (`.txt .md .pdf`) |
+| POST | `/rag/samples` | Install the example help-centre documents |
+| GET / DELETE | `/rag/collections[/{name}]` | List / delete collections |
+| POST | `/rag/index` | Index documents into a collection |
+| POST | `/rag/query` | Search a collection |
+
+Connection types `qdrant`, `weaviate` and `chroma` are available on `/connections`.
+
 ## Graph Data Schema
 
 The `graph_data` object stored in a workflow follows this structure:

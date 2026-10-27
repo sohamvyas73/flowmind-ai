@@ -4,7 +4,7 @@ import {
   Database, Brain, CheckCircle, GitBranch, Send,
   Globe, Shuffle, UserCheck,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine,
-  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck,
+  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote,
 } from 'lucide-react';
 
 const nodeStyles = 'px-4 py-3 shadow-lg rounded-lg border-2 bg-white min-w-[160px]';
@@ -377,6 +377,51 @@ export const QualityGateNode = memo(({ data, selected }: NodeProps) => {
   );
 });
 
+export const IndexDocsNode = memo(({ data, selected }: NodeProps) => (
+  <div className={`${nodeStyles} ${selected ? 'border-indigo-500' : 'border-gray-300'}`}>
+    <Handle type="target" position={Position.Left} className="w-3 h-3 bg-indigo-500" />
+    <div className="flex items-center gap-2">
+      <DatabaseZap className="w-5 h-5 text-indigo-600" />
+      <div className="font-semibold text-sm">{data.label}</div>
+    </div>
+    <div className="text-xs text-gray-600 mt-1 bg-indigo-50 px-2 py-1 rounded">
+      {data.collection ? `→ ${data.collection}` : 'choose a collection'} · {data.source === 'dataset' ? 'table text' : 'documents'}
+    </div>
+    <Handle type="source" position={Position.Right} className="w-3 h-3 bg-indigo-500" />
+  </div>
+));
+
+export const RetrieveNode = memo(({ data, selected }: NodeProps) => (
+  <div className={`${nodeStyles} ${selected ? 'border-indigo-500' : 'border-gray-300'}`}>
+    <Handle type="target" position={Position.Left} className="w-3 h-3 bg-indigo-500" />
+    <div className="flex items-center gap-2">
+      <ScanSearch className="w-5 h-5 text-indigo-600" />
+      <div className="font-semibold text-sm">{data.label}</div>
+    </div>
+    <div className="text-xs text-gray-600 mt-1 bg-indigo-50 px-2 py-1 rounded">
+      {data.collection ? `${data.collection} · top ${data.topK ?? 4}` : 'choose a collection'}
+    </div>
+    <Handle type="source" position={Position.Right} className="w-3 h-3 bg-indigo-500" />
+  </div>
+));
+
+export const RagAnswerNode = memo(({ data, selected }: NodeProps) => (
+  <div className={`${nodeStyles} ${selected ? 'border-indigo-500' : 'border-gray-300'}`}>
+    <Handle type="target" position={Position.Left} className="w-3 h-3 bg-indigo-500" />
+    <div className="flex items-center gap-2">
+      <MessageSquareQuote className="w-5 h-5 text-indigo-600" />
+      <div className="font-semibold text-sm">{data.label}</div>
+    </div>
+    <div className="text-xs text-gray-600 mt-1 bg-indigo-50 px-2 py-1 rounded">
+      answers from {data.collection || '…'} with citations
+    </div>
+    <Handle type="source" position={Position.Right} className="w-3 h-3 bg-indigo-500" />
+  </div>
+));
+
+IndexDocsNode.displayName = 'IndexDocsNode';
+RetrieveNode.displayName = 'RetrieveNode';
+RagAnswerNode.displayName = 'RagAnswerNode';
 LoadDataNode.displayName = 'LoadDataNode';
 QualityGateNode.displayName = 'QualityGateNode';
 CleanDataNode.displayName = 'CleanDataNode';

@@ -82,6 +82,9 @@ function kitchenSink() {
     ['combineDataNode', { label: 'Combine', joinType: 'inner', keys: [{ left: 'customer_id', right: 'customer_id' }], swap: false }],
     ['summariseDataNode', { label: 'Summarise', groupBy: ['status'], aggregations: [{ column: '*', fn: 'count', as: 'orders' }] }],
     ['sqlNode', { label: 'SQL', query: 'SELECT status, count(*) AS n\nFROM input\nGROUP BY status' }],
+    ['indexDocsNode', { label: 'Index docs', collection: 'help', source: 'files', fileNames: [], textColumn: '', sourceColumn: '', chunkSize: 400, overlap: 50, removeMissing: false }],
+    ['retrieveNode', { label: 'Find passages', collection: 'help', query: '{{question}}', topK: 3, minScore: 0 }],
+    ['ragAnswerNode', { label: 'Answer from docs', collection: 'help', question: '{{question}}', topK: 3, minScore: 0, instructions: 'Answer in one or two sentences.', noAnswerText: 'I could not find this in your documents.' }],
     ['qualityGateNode', { label: 'Quality Check', onFail: 'stop', rules: [{ type: 'unique', columns: ['order_id'] }, { type: 'range', column: 'quantity', min: 1, max: 100 }] }],
   ];
   return { nodes: t.map(([type, d], i) => node(`k${i}`, type, 60 + (i % 5) * 260, 60 + Math.floor(i / 5) * 150, d)), edges: [] };
@@ -103,6 +106,11 @@ async function main() {
   await ensureUser('demo.user@example.com', 'Demo Analyst', true, 400);
   const demo = await login('demo.user@example.com', 'DemoPass-123');
   for (const tok of [admin, demo]) await api('/data/examples', { method: 'POST', token: tok });
+
+  // start from a clean slate so reruns don't pile up duplicates
+  for (const tok of [admin, demo]) {
+    for (const w of (await api('/workflows/workflows', { token: tok }).catch(() => [])) || []) await api(`/workflows/workflows/${w.id}`, { method: 'DELETE', token: tok }).catch(() => {});
+  }
 
   const mk = (tok, name, graph) => api('/workflows/workflows', { method: 'POST', token: tok, body: { name, graph_data: graph } });
   const exec = (tok, wf, input = {}) => api(`/workflows/workflows/${wf.id}/execute`, { method: 'POST', token: tok, body: { workflow_id: wf.id, input_data: input } });
@@ -139,6 +147,16 @@ async function main() {
   await api('/runs', { method: 'POST', token: admin, body: { workflow_id: dataWf.id } });
   await api('/schedules', { method: 'POST', token: admin, body: { workflow_id: dataWf.id, name: 'Weekday morning report', cron: '0 9 * * 1-5', timezone: 'Asia/Kolkata' } }).catch(() => {});
   await api('/schedules', { method: 'POST', token: admin, body: { workflow_id: gateWf.id, name: 'Hourly order check', cron: '0 * * * *', timezone: 'UTC' } }).catch(() => {});
+  // retrieval: start from a clean, un-configured state, and add vector-database connections
+  await api('/rag/settings', { method: 'DELETE', token: admin }).catch(() => {});
+  await api('/rag/collections/help', { method: 'DELETE', token: admin }).catch(() => {});
+  const vectorUrls = { qdrant: process.env.QDRANT_URL || 'http://127.0.0.1:6333', weaviate: process.env.WEAVIATE_URL || 'http://127.0.0.1:8080', chroma: process.env.CHROMA_URL || 'http://127.0.0.1:8001' };
+  for (const [type, url] of Object.entries(vectorUrls)) {
+    try {
+      const c = await api('/connections', { method: 'POST', token: admin, body: { name: `${type[0].toUpperCase()}${type.slice(1)} (local Docker)`, type, access_mode: 'read_write', host_allowlist: [new URL(url).hostname], config: { url } } });
+      await api(`/connections/${c.id}/test`, { method: 'POST', token: admin });
+    } catch (e) { console.log(`${type} connection seed skipped:`, e.message.split('\n')[0]); }
+  }
   if (SHOP) {
     try {
       const c = await api('/connections', { method: 'POST', token: admin, body: {
@@ -203,7 +221,8 @@ async function main() {
   await section('sample workflows', async () => {
     const names = ['KYC Verification', 'Fraud Detection', 'Document Processing', 'API Enrichment + Review', 'Loan Eligibility',
       'Data: Tidy up messy contacts', 'Data: Sales by region', 'Data: Orders + customers (join)', 'Data: Top products (SQL)',
-      'Data: Quality gate on dirty orders', 'Data: Protect personal data'];
+      'Data: Quality gate on dirty orders', 'Data: Protect personal data',
+      'RAG: Index the help centre', 'RAG: Ask the help centre', 'RAG: Find passages (no AI)'];
     let i = 3;
     for (const n of names) {
       try {
@@ -222,7 +241,7 @@ async function main() {
       ['HTTP Request', 'http-request'], ['Transform', 'transform'], ['Human Review', 'human-review'], ['Rule Engine', 'rule-engine'],
       ['Validator', 'validator'], ['Switch Router', 'switch-router'], ['Formatter', 'formatter'], ['Aggregator', 'aggregator'],
       ['Indian KYC', 'indian-kyc'], ['Load Data', 'load-data'], ['Clean', 'clean'], ['Combine', 'combine'], ['Summarise', 'summarise'],
-      ['SQL', 'sql'], ['Quality Check', 'quality-check'],
+      ['SQL', 'sql'], ['Quality Check', 'quality-check'], ['Index docs', 'index-documents'], ['Find passages', 'retrieve'], ['Answer from docs', 'rag-answer'],
     ];
     const fit = page.locator('button.react-flow__controls-fitview');
     if (await fit.count()) { await fit.click(); await sleep(400); await page.locator('button.react-flow__controls-zoomout').click(); await sleep(400); await page.mouse.move(600, 760); await page.mouse.down(); await page.mouse.move(840, 800, { steps: 8 }); await page.mouse.up(); await sleep(500); }
@@ -348,6 +367,67 @@ async function main() {
     await sleep(600);
     await shot(page, '08-settings', '01-model-and-api-settings', { fullPage: true });
     await back();
+  });
+
+  // ── 10 retrieval (RAG) ─────────────────────────────────────────────────────
+  const runQuestion = async (sampleName, question, area, name) => {
+    await loadSample(sampleName);
+    await page.getByRole('button', { name: 'Execute' }).click();
+    await page.waitForSelector('text=Execute Workflow');
+    await page.locator('div.fixed input[type=text], div.fixed textarea').first().fill(question);
+    await page.getByRole('button', { name: 'Run Workflow' }).click();
+    await page.waitForSelector('text=Execution Results', { timeout: 30000 });
+    await sleep(500);
+    await shot(page, area, name);
+    await page.getByRole('button', { name: 'Close' }).click();
+  };
+  const openRetrieval = async () => { await page.click('button[title^="Retrieval (RAG)"]'); await page.waitForSelector('text=Retrieval (RAG) setup'); await sleep(500); };
+
+  await section('retrieval: refuses before setup', async () => {
+    await page.reload();
+    await page.waitForSelector('text=Sample Workflows');
+    await runQuestion('RAG: Find passages (no AI)', 'how many days until a refund is processed', '10-retrieval', '01-node-refuses-before-setup');
+  });
+
+  await section('retrieval: setup screens', async () => {
+    await openRetrieval();
+    await shot(page, '10-retrieval', '02-not-set-up', { fullPage: true });
+    await page.locator('button', { hasText: 'Local — word hashing' }).click();
+    await page.locator('button', { hasText: 'Qdrant' }).first().click();
+    await page.locator('summary', { hasText: 'Start it with Docker' }).click();
+    await sleep(300);
+    await shot(page, '10-retrieval', '03-choose-qdrant-and-docker', { fullPage: true });
+    // every supported store, tested for real
+    for (const [label, slug] of [['Qdrant', 'qdrant'], ['Weaviate', 'weaviate'], ['Chroma', 'chroma'], ['pgvector', 'pgvector']]) {
+      await page.locator('button', { hasText: label }).first().click();
+      if (slug !== 'pgvector') await page.locator('select').nth(1).selectOption({ label: `${label} (local Docker)` });
+      await page.getByRole('button', { name: /Save & test/ }).click();
+      await page.waitForSelector('text=Vector store:', { timeout: 30000 });
+      await sleep(700);
+      await shot(page, '10-retrieval', `04-store-${slug}-tested`, { fullPage: true });
+    }
+  });
+
+  await section('retrieval: documents, index, search', async () => {
+    await page.getByText('Load example help-centre docs').click();
+    await page.waitForSelector('text=acme-refund-policy.md');
+    await page.getByRole('button', { name: 'Index all' }).click();
+    await page.waitForSelector('text=chunks stored', { timeout: 30000 });
+    await sleep(400);
+    await shot(page, '10-retrieval', '05-documents-indexed', { fullPage: true });
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await page.waitForSelector('text=score 0.', { timeout: 20000 });
+    await sleep(300);
+    await shot(page, '10-retrieval', '06-search-results', { fullPage: true });
+    await back();
+  });
+
+  await section('retrieval: node results', async () => {
+    await runQuestion('RAG: Find passages (no AI)', 'how many days until a refund is processed', '10-retrieval', '07-retrieve-node-results');
+    await loadSample('RAG: Ask the help centre');
+    await page.locator('.react-flow__node', { hasText: 'Answer from docs' }).first().click();
+    await page.waitForSelector('text=Retrieves passages');
+    await shot(page, '10-retrieval', '08-rag-answer-settings', { locator: page.locator('div.absolute.right-4.top-4') });
   });
 
   // ── 09 admin ───────────────────────────────────────────────────────────────

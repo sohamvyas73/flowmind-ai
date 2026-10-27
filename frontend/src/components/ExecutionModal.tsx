@@ -6,7 +6,7 @@ import {
   Database, Brain, CheckCircle, GitBranch, Send,
   Globe, Shuffle, UserCheck, Clock,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator,
-  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck,
+  FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote,
 } from 'lucide-react';
 import { WorkflowExecution, InputField } from '@/types/workflow';
 
@@ -33,6 +33,9 @@ const nodeIcons: Record<string, React.FC<{ className?: string }>> = {
   summariseDataNode: ({ className }) => <Sigma           className={className} />,
   sqlNode:           ({ className }) => <FileCode2       className={className} />,
   qualityGateNode:   ({ className }) => <ClipboardCheck  className={className} />,
+  indexDocsNode:     ({ className }) => <DatabaseZap     className={className} />,
+  retrieveNode:      ({ className }) => <ScanSearch      className={className} />,
+  ragAnswerNode:     ({ className }) => <MessageSquareQuote className={className} />,
 };
 
 const nodeColors: Record<string, string> = {
@@ -56,6 +59,9 @@ const nodeColors: Record<string, string> = {
   summariseDataNode: 'text-cyan-600',
   sqlNode:           'text-cyan-600',
   qualityGateNode:   'text-pink-600',
+  indexDocsNode:     'text-indigo-600',
+  retrieveNode:      'text-indigo-600',
+  ragAnswerNode:     'text-indigo-600',
 };
 
 interface ExecutionModalProps {

@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage';
 import { AdminPanel } from './pages/AdminPanel';
 import { ConfigPage } from './pages/ConfigPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
+import { RetrievalPage } from './pages/RetrievalPage';
 import { AutomationPage } from './pages/AutomationPage';
 import { DataPage } from './pages/DataPage';
 import { useAuthStore } from './store/authStore';
@@ -91,6 +92,10 @@ function App() {
 
   if (activeView === 'connections') {
     return <ConnectionsPage />;
+  }
+
+  if (activeView === 'retrieval') {
+    return <RetrievalPage />;
   }
 
   if (activeView === 'automation') {

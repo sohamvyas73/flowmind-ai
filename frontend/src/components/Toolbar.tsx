@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2, Database, CalendarClock, FlaskConical, HardDrive } from 'lucide-react';
+import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2, Database, CalendarClock, FlaskConical, HardDrive, DatabaseZap } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { workflowApi, PreviewResult } from '@/services/api';
 import { Workflow } from '@/types/workflow';
@@ -286,6 +286,14 @@ export function Toolbar() {
         >
           <Database className="w-4 h-4" />
           Connections
+        </button>
+        <button
+          onClick={() => setView('retrieval')}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          title="Retrieval (RAG) setup: embeddings and vector store"
+        >
+          <DatabaseZap className="w-4 h-4" />
+          Retrieval
         </button>
         <button
           onClick={() => setView('automation')}

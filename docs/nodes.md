@@ -772,3 +772,18 @@ internals, see [phase2-data-engine.md](phase2-data-engine.md).
 `severity: error|warn`) and `onFail` (`stop` | `warn`). The incoming table passes through unchanged; the output adds
 `quality` (`passed`, `rules[]` with `failed`, `message`, `examples`, `sql`). See
 [phase3-trust-and-lineage.md](phase3-trust-and-lineage.md#quality-rules).
+
+---
+
+## Retrieval nodes
+
+Three nodes for RAG. They refuse to run until **Retrieval** has been set up on purpose (embedding model + vector store,
+both tested) — see the [RAG guide](rag-guide.md) and the [technical reference](phase4-retrieval.md).
+
+| Node | Does | Key settings | Output |
+|---|---|---|---|
+| **Index Documents** | Chunks and embeds uploaded documents (or a table's text column) into a collection; re-running skips unchanged documents | `collection`, `source`, `chunkSize`, `overlap` | `added, updated, unchanged, chunks, total_chunks` |
+| **Retrieve** | Finds the passages closest to a question (no AI) | `collection`, `query` (`{{field}}`), `topK`, `minScore` | `passages[], context, count, top_score` |
+| **RAG Answer** | Retrieves, then answers only from the passages with `[1]` citations; refuses without calling the AI when nothing matches | + `instructions`, `noAnswerText` | `answer, citations[], passages[], grounded` |
+
+![RAG Answer settings](images/gallery/10-retrieval/08-rag-answer-settings.png)

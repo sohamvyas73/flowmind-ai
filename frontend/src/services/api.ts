@@ -432,6 +432,58 @@ export const dataApi = {
   },
 };
 
+// ── Retrieval / RAG (Phase 4) ──────────────────────────────────────────────────
+
+export interface EmbedderInfo {
+  provider: string; label: string; description: string; needs_key: boolean; local: boolean; semantic: boolean;
+  verified_here: boolean; models: { model: string; dim: number; note: string }[];
+}
+export interface StoreInfo {
+  type: string; label: string; summary: string; best_for: string; needs_connection: boolean; needs_docker: boolean;
+  docker: string | null; setup?: string[]; default_url?: string; profile?: string;
+}
+export interface RagCatalog { stores: StoreInfo[]; embedders: EmbedderInfo[]; compose: string; script: string }
+export interface RagSettings {
+  configured: boolean; ready: boolean; embed_provider?: string | null; embed_model?: string | null; embed_dim?: number | null;
+  has_embed_key: boolean; store_type?: string | null; connection_id?: string | null; embed_ok: boolean; store_ok: boolean;
+  embed_message?: string | null; store_message?: string | null; tested_at?: string | null;
+}
+export interface RagSettingsInput {
+  embed_provider: string; embed_model: string; embed_dim: number; embed_api_key?: string | null;
+  store_type: string; connection_id?: string | null;
+}
+export interface RagFile { id: string; name: string; format: string; size_bytes: number; created_at: string }
+export interface RagCollection {
+  id: string; name: string; store_type: string; embedding: string; documents: number; chunks: number; sources: string[]; updated_at: string;
+}
+export interface RagPassage { text: string; score: number; source: string; chunk?: number | null }
+export interface IndexStats {
+  collection: string; created: boolean; added: number; updated: number; unchanged: number; removed: number;
+  chunks: number; total_chunks: number;
+}
+
+export const ragApi = {
+  catalog: async (): Promise<RagCatalog> => (await api.get('/rag/catalog')).data,
+  settings: async (): Promise<RagSettings> => (await api.get('/rag/settings')).data,
+  save: async (body: RagSettingsInput): Promise<RagSettings> => (await api.put('/rag/settings', body)).data,
+  test: async (): Promise<RagSettings> => (await api.post('/rag/settings/test')).data,
+  reset: async (): Promise<void> => { await api.delete('/rag/settings'); },
+  files: async (): Promise<RagFile[]> => (await api.get('/rag/files')).data,
+  upload: async (file: File): Promise<RagFile> => {
+    const form = new FormData();
+    form.append('file', file);
+    return (await api.post('/rag/files', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+  },
+  removeFile: async (id: string): Promise<void> => { await api.delete(`/rag/files/${id}`); },
+  samples: async (): Promise<RagFile[]> => (await api.post('/rag/samples')).data,
+  collections: async (): Promise<RagCollection[]> => (await api.get('/rag/collections')).data,
+  removeCollection: async (name: string): Promise<void> => { await api.delete(`/rag/collections/${encodeURIComponent(name)}`); },
+  index: async (body: { collection: string; file_names: string[]; chunk_size: number; overlap: number }): Promise<IndexStats> =>
+    (await api.post('/rag/index', body)).data,
+  query: async (body: { collection: string; query: string; top_k: number; min_score: number }): Promise<{ passages: RagPassage[] }> =>
+    (await api.post('/rag/query', body)).data,
+};
+
 // ── Runs & schedules (Phase 1: job queue) ──────────────────────────────────────
 
 export interface JobInfo {

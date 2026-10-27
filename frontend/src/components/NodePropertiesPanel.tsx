@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { InputField } from '@/types/workflow';
+import { RagNodeProperties } from './RagNodeProperties';
 import { DataNodeProperties } from './DataNodeProperties';
 import { X, Plus } from 'lucide-react';
 
@@ -757,6 +758,11 @@ export function NodePropertiesPanel() {
         {/* ═══════════════════ DATA NODES ═══════════════════ */}
         {['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode', 'qualityGateNode'].includes(t || '') && (
           <DataNodeProperties node={selectedNode} data={data} up={up} />
+        )}
+
+        {/* ═══════════════════ RETRIEVAL NODES ═══════════════════ */}
+        {['indexDocsNode', 'retrieveNode', 'ragAnswerNode'].includes(t || '') && (
+          <RagNodeProperties node={selectedNode} data={data} up={up} />
         )}
 
       </div>

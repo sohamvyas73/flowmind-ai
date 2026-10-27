@@ -172,7 +172,7 @@ function ConnectionCard({ conn, spec, isAdmin, onEdit, onBrowse, onChanged }: {
 
   const target = conn.type === 'postgres'
     ? `${conn.config.host ?? ''}:${conn.config.port ?? ''}/${conn.config.database ?? ''}`
-    : String(conn.config.base_url ?? '');
+    : String(conn.config.base_url ?? conn.config.url ?? '');
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">

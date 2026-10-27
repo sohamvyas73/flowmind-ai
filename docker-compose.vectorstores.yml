@@ -1,0 +1,48 @@
+# Optional vector databases for FlowMind retrieval (RAG).
+# Start only the one you chose on the Retrieval page:
+#   docker compose -f docker-compose.vectorstores.yml --profile qdrant up -d
+#   docker compose -f docker-compose.vectorstores.yml --profile weaviate up -d
+#   docker compose -f docker-compose.vectorstores.yml --profile chroma up -d
+# pgvector needs no container of its own: it is the PostgreSQL FlowMind already uses
+# (docker-compose.yml ships the pgvector/pgvector image).
+#
+# Then add a connection of that type on the Connections page. Local servers need an admin to
+# allow-list the host (localhost) on the connection, because FlowMind blocks private addresses by default.
+services:
+  qdrant:
+    profiles: ["qdrant"]
+    image: qdrant/qdrant:v1.12.4
+    container_name: flowmind-qdrant
+    ports: ["6333:6333"]
+    volumes: ["flowmind_qdrant:/qdrant/storage"]
+    restart: unless-stopped
+
+  weaviate:
+    profiles: ["weaviate"]
+    image: semitechnologies/weaviate:1.27.0
+    container_name: flowmind-weaviate
+    command: ["--host", "0.0.0.0", "--port", "8080", "--scheme", "http"]
+    ports: ["8080:8080"]
+    environment:
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      DEFAULT_VECTORIZER_MODULE: none
+      CLUSTER_HOSTNAME: node1
+    volumes: ["flowmind_weaviate:/var/lib/weaviate"]
+    restart: unless-stopped
+
+  chroma:
+    profiles: ["chroma"]
+    image: chromadb/chroma:0.5.20
+    container_name: flowmind-chroma
+    ports: ["8001:8000"]
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes: ["flowmind_chroma:/chroma/chroma"]
+    restart: unless-stopped
+
+volumes:
+  flowmind_qdrant:
+  flowmind_weaviate:
+  flowmind_chroma:
