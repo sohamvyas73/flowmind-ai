@@ -14,6 +14,7 @@ from app.api import data as data_router
 from app.api import lineage as lineage_router
 from app.api import runs as runs_router
 from app.api import schedules as schedules_router
+from app.api import rag as rag_router
 from app.core import maintenance
 
 # Register all models with Base before create_all
@@ -24,6 +25,7 @@ from app.models import schedule as _schedule_models  # noqa: F401
 from app.models import connection as _connection_models  # noqa: F401
 from app.models import data as _data_models    # noqa: F401
 from app.models import lineage as _lineage_models  # noqa: F401
+from app.models import rag as _rag_models      # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,6 +165,7 @@ app.include_router(data_router.router,      prefix=f"{settings.API_V1_STR}/data"
 app.include_router(lineage_router.router,  prefix=f"{settings.API_V1_STR}/lineage",     tags=["lineage"])
 app.include_router(runs_router.router,      prefix=f"{settings.API_V1_STR}/runs",        tags=["runs"])
 app.include_router(schedules_router.router, prefix=f"{settings.API_V1_STR}/schedules",   tags=["schedules"])
+app.include_router(rag_router.router,       prefix=f"{settings.API_V1_STR}/rag",         tags=["retrieval"])
 app.include_router(workflows.router,     prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"])
 
 

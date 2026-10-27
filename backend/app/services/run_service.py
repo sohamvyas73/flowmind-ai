@@ -82,6 +82,10 @@ CREDIT_COSTS: Dict[str, int] = {
     "summariseDataNode": 1,
     "sqlNode": 2,
     "qualityGateNode": 1,
+    # Retrieval (Phase 4): embedding runs on the user's own setup; RAG Answer is token-billed like the AI nodes
+    "indexDocsNode": 2,
+    "retrieveNode": 1,
+    "ragAnswerNode": 1,
 }
 
 _DATA_NODES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode"}
@@ -94,7 +98,8 @@ def _data_usage_extra(result: Dict[str, Any]) -> int:
     return int(u.get("scanned_bytes", 0) // _SCAN_BYTES_PER_CREDIT) + int(u.get("compute_s", 0) // _COMPUTE_SECONDS_PER_CREDIT)
 
 
-_TOKEN_BASED_NODES = {"aiNode", "verificationNode", "decisionNode"}
+_TOKEN_BASED_NODES = {"aiNode", "verificationNode", "decisionNode", "ragAnswerNode"}
+_RAG_NODES = {"indexDocsNode", "retrieveNode"}
 _TOKENS_PER_CREDIT = 1000  # 1 credit = 1,000 tokens, configurable here
 
 
@@ -150,6 +155,10 @@ def _charge_credits(
                 desc = f"AI Agent · {result.get('task', 'inference')} · {token_str}"
             elif node_type == "verificationNode":
                 desc = f"Verification · {result.get('verification_type', '')} · {token_str}"
+            elif node_type == "ragAnswerNode":
+                if "error" in result:
+                    continue
+                desc = f"RAG Answer · {len(result.get('passages') or [])} passages · {token_str}"
             else:
                 desc = f"Decision · {result.get('decision', '')} · {token_str}"
 
@@ -163,6 +172,11 @@ def _charge_credits(
                     continue                       # a failed data node did no billable work (a failed quality check did)
                 cost += _data_usage_extra(result)
                 desc = f"Data · {node_type.replace('Node', '')} · {int(result.get('row_count') or 0):,} rows"
+            elif node_type in _RAG_NODES:
+                if "error" in result:
+                    continue                       # a node that failed before doing work is not billed
+                desc = (f"Index · {result.get('chunks', 0):,} chunks embedded" if node_type == "indexDocsNode"
+                        else f"Retrieve · {result.get('count', 0)} passages")
             elif node_type == "indianKycNode":
                 desc = f"Indian KYC · {result.get('document_type', '')} · {result.get('provider', '')}"
             elif node_type == "httpNode":
