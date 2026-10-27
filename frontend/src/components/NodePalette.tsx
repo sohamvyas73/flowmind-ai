@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck } from 'lucide-react';
+import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { healthCheck, configApi } from '@/services/api';
@@ -196,6 +196,33 @@ const nodeTypeList: NodeTypeConfig[] = [
     border: 'border-pink-200',
     bg: 'bg-pink-50',
     text: 'text-pink-700',
+  },
+  {
+    type: 'indexDocsNode',
+    label: 'Index Documents',
+    description: 'Make documents searchable',
+    icon: ({ className }) => <DatabaseZap className={className} />,
+    border: 'border-indigo-200',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-700',
+  },
+  {
+    type: 'retrieveNode',
+    label: 'Retrieve',
+    description: 'Find relevant passages',
+    icon: ({ className }) => <ScanSearch className={className} />,
+    border: 'border-indigo-200',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-700',
+  },
+  {
+    type: 'ragAnswerNode',
+    label: 'RAG Answer',
+    description: 'Answer with citations',
+    icon: ({ className }) => <MessageSquareQuote className={className} />,
+    border: 'border-indigo-200',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-700',
   },
   {
     type: 'sqlNode',

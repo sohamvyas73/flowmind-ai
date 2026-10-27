@@ -140,6 +140,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     } else if (type === 'qualityGateNode') {
       data.rules = [];
       data.onFail = 'stop';
+    } else if (type === 'indexDocsNode') {
+      data.collection = '';
+      data.source = 'files';
+      data.fileNames = [];
+      data.textColumn = '';
+      data.sourceColumn = '';
+      data.chunkSize = 800;
+      data.overlap = 100;
+      data.removeMissing = false;
+    } else if (type === 'retrieveNode') {
+      data.collection = '';
+      data.query = '{{question}}';
+      data.topK = 4;
+      data.minScore = 0;
+    } else if (type === 'ragAnswerNode') {
+      data.collection = '';
+      data.question = '{{question}}';
+      data.topK = 4;
+      data.minScore = 0;
+      data.instructions = '';
+      data.noAnswerText = 'I could not find this in your documents.';
     } else if (type === 'sqlNode') {
       data.query = 'SELECT *\nFROM input\nLIMIT 100';
     } else if (type === 'indianKycNode') {
@@ -224,6 +245,9 @@ function getNodeLabel(type: string): string {
     summariseDataNode: 'Summarise',
     sqlNode: 'SQL',
     qualityGateNode: 'Quality Check',
+    indexDocsNode: 'Index Documents',
+    retrieveNode: 'Retrieve',
+    ragAnswerNode: 'RAG Answer',
   };
   return labels[type] || 'Node';
 }

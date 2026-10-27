@@ -446,4 +446,43 @@ export const sampleWorkflows: SampleWorkflow[] = [
       { id: 'dp_e2', source: 'dp_2', target: 'dp_3' },
     ],
   },
+  {
+    name: 'RAG: Index the help centre',
+    description: 'Make the example help-centre documents searchable. Set up Retrieval first (nothing is chosen for you), then load the example docs.',
+    nodes: [
+      { id: 'ri_1', type: 'indexDocsNode', position: { x: 60, y: 160 },
+        data: { label: 'Index help centre', collection: 'help', source: 'files', fileNames: [], textColumn: '', sourceColumn: '', chunkSize: 400, overlap: 50, removeMissing: false } },
+    ],
+    edges: [],
+  },
+  {
+    name: 'RAG: Ask the help centre',
+    description: 'Ask a question and get an answer written only from your documents, with citations. Needs the help collection indexed.',
+    nodes: [
+      { id: 'ra_1', type: 'inputNode', position: { x: 60, y: 160 },
+        data: { label: 'Question', description: 'What the customer asks', fields: [{ id: 'ra_f1', name: 'question', type: 'text' }] } },
+      { id: 'ra_2', type: 'ragAnswerNode', position: { x: 320, y: 160 },
+        data: { label: 'Answer from docs', collection: 'help', question: '{{question}}', topK: 3, minScore: 0, instructions: 'Answer in one or two sentences.', noAnswerText: 'I could not find this in your documents.', temperature: 0.1 } },
+      { id: 'ra_3', type: 'outputNode', position: { x: 600, y: 160 }, data: { label: 'Answer', outputType: 'api' } },
+    ],
+    edges: [
+      { id: 'ra_e1', source: 'ra_1', target: 'ra_2' },
+      { id: 'ra_e2', source: 'ra_2', target: 'ra_3' },
+    ],
+  },
+  {
+    name: 'RAG: Find passages (no AI)',
+    description: 'Search only: returns the best-matching passages and their scores. Free of AI costs.',
+    nodes: [
+      { id: 'rf_1', type: 'inputNode', position: { x: 60, y: 160 },
+        data: { label: 'Question', description: 'What to look for', fields: [{ id: 'rf_f1', name: 'question', type: 'text' }] } },
+      { id: 'rf_2', type: 'retrieveNode', position: { x: 320, y: 160 },
+        data: { label: 'Find passages', collection: 'help', query: '{{question}}', topK: 3, minScore: 0 } },
+      { id: 'rf_3', type: 'outputNode', position: { x: 600, y: 160 }, data: { label: 'Passages', outputType: 'api' } },
+    ],
+    edges: [
+      { id: 'rf_e1', source: 'rf_1', target: 'rf_2' },
+      { id: 'rf_e2', source: 'rf_2', target: 'rf_3' },
+    ],
+  },
 ];

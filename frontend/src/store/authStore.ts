@@ -11,7 +11,7 @@ export interface AuthUser {
   is_active: boolean;
 }
 
-export type AppView = 'canvas' | 'admin' | 'config' | 'connections' | 'automation' | 'data';
+export type AppView = 'canvas' | 'admin' | 'config' | 'connections' | 'automation' | 'data' | 'retrieval';
 
 interface AuthState {
   user: AuthUser | null;

@@ -5,6 +5,10 @@ This guide teaches the data features of FlowMind **in the simplest form**. You d
 [Pro mode: the SQL node](#6-pro-mode-the-sql-node) or read the
 [technical reference](phase2-data-engine.md).
 
+![Data page](images/gallery/06-data/01-data-page.png)
+
+More screens: [screenshot gallery](screenshots.md#data-pipelines).
+
 > **Everything here uses example files that ship with FlowMind.** One click loads them, so you can follow every
 > step and compare your result with the tables below. They are all real outputs, not mock-ups.
 
