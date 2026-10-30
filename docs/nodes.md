@@ -787,3 +787,20 @@ both tested) — see the [RAG guide](rag-guide.md) and the [technical reference]
 | **RAG Answer** | Retrieves, then answers only from the passages with `[1]` citations; refuses without calling the AI when nothing matches | + `instructions`, `noAnswerText` | `answer, citations[], passages[], grounded` |
 
 ![RAG Answer settings](images/gallery/10-retrieval/08-rag-answer-settings.png)
+
+---
+
+## ML nodes
+
+Five nodes for using models you already have. They need *your* model endpoint / MLflow registry as connections and never run
+model code inside FlowMind — see the [ML guide](ml-guide.md) and [technical reference](phase5-ml.md).
+
+| Node | Does | Key settings | Output |
+|---|---|---|---|
+| **Predict** | Scores one record | `connectionId`, `features[]` | `prediction, probability, latency_ms` |
+| **Batch Score** | Scores a whole table, adds a column | `connectionId`, `features[]`, `outputColumn` | table + `scored_rows, prediction_summary` |
+| **Drift Check** | Compares a table with the training data (PSI); can stop the run | `referenceFile`, `warnAt`, `alertAt`, `onDrift` | table unchanged + `drift` |
+| **Feedback** | Compares predictions with real outcomes; keeps history | `modelName`, `taskType`, columns, `threshold` | table unchanged + `feedback` |
+| **Promote Model** | Moves an MLflow alias to a version if gates pass | `modelName`, `version`, `alias`, `gates[]` | `promoted, gates, previous_version` |
+
+![Promote Model settings](images/gallery/04-node-settings/25-promote-model.png)

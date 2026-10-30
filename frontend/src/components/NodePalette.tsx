@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote } from 'lucide-react';
+import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote, Sparkles, Gauge, Activity, Target, Rocket } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { healthCheck, configApi } from '@/services/api';
@@ -223,6 +223,51 @@ const nodeTypeList: NodeTypeConfig[] = [
     border: 'border-indigo-200',
     bg: 'bg-indigo-50',
     text: 'text-indigo-700',
+  },
+  {
+    type: 'predictNode',
+    label: 'Predict',
+    description: 'Score one record',
+    icon: ({ className }) => <Sparkles className={className} />,
+    border: 'border-emerald-200',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+  },
+  {
+    type: 'batchScoreNode',
+    label: 'Batch Score',
+    description: 'Score a whole table',
+    icon: ({ className }) => <Gauge className={className} />,
+    border: 'border-emerald-200',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+  },
+  {
+    type: 'driftCheckNode',
+    label: 'Drift Check',
+    description: 'Has the data changed?',
+    icon: ({ className }) => <Activity className={className} />,
+    border: 'border-emerald-200',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+  },
+  {
+    type: 'feedbackNode',
+    label: 'Feedback',
+    description: 'Compare to real outcomes',
+    icon: ({ className }) => <Target className={className} />,
+    border: 'border-emerald-200',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+  },
+  {
+    type: 'registryPromoteNode',
+    label: 'Promote Model',
+    description: 'Gate + registry alias',
+    icon: ({ className }) => <Rocket className={className} />,
+    border: 'border-emerald-200',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
   },
   {
     type: 'sqlNode',

@@ -4,7 +4,8 @@ export type NodeType =
   | 'ruleNode' | 'codeNode' | 'validatorNode' | 'switchNode' | 'formatterNode' | 'aggregatorNode'
   | 'indianKycNode'
   | 'loadDataNode' | 'cleanDataNode' | 'combineDataNode' | 'summariseDataNode' | 'sqlNode' | 'qualityGateNode'
-  | 'indexDocsNode' | 'retrieveNode' | 'ragAnswerNode';
+  | 'indexDocsNode' | 'retrieveNode' | 'ragAnswerNode'
+  | 'predictNode' | 'batchScoreNode' | 'driftCheckNode' | 'feedbackNode' | 'registryPromoteNode';
 
 export interface InputField {
   id: string;

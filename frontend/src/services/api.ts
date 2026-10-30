@@ -484,6 +484,20 @@ export const ragApi = {
     (await api.post('/rag/query', body)).data,
 };
 
+// ── ML (Phase 5) ───────────────────────────────────────────────────────────────
+
+export interface MlVersion { version: string; status?: string | null; run_id?: string | null; created?: number | null; metrics: Record<string, number>; aliases: string[] }
+export interface MlModel { name: string; versions: MlVersion[]; aliases: Record<string, string> }
+export interface MlModels { connection: string; can_promote: boolean; models: MlModel[] }
+export interface FeedbackBatch { id: string; model_name: string; task_type: string; rows: number; metric: string; value: number; details?: Record<string, unknown> | null; created_at: string }
+
+export const mlApi = {
+  models: async (connectionId: string): Promise<MlModels> => (await api.get(`/ml/connections/${connectionId}/models`)).data,
+  tryEndpoint: async (connectionId: string, features: string[], record: Record<string, string>): Promise<{ prediction: unknown; probability?: number | null; latency_ms: number; features: Record<string, unknown> }> =>
+    (await api.post(`/ml/endpoints/${connectionId}/score`, { features, record })).data,
+  feedback: async (model?: string): Promise<FeedbackBatch[]> => (await api.get('/ml/feedback', { params: model ? { model } : {} })).data,
+};
+
 // ── Runs & schedules (Phase 1: job queue) ──────────────────────────────────────
 
 export interface JobInfo {

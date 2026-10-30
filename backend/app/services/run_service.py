@@ -86,6 +86,12 @@ CREDIT_COSTS: Dict[str, int] = {
     "indexDocsNode": 2,
     "retrieveNode": 1,
     "ragAnswerNode": 1,
+    # ML (Phase 5): scoring happens on the user's own endpoint; these are the platform's handling costs
+    "predictNode": 2,
+    "batchScoreNode": 3,
+    "driftCheckNode": 1,
+    "feedbackNode": 1,
+    "registryPromoteNode": 1,
 }
 
 _DATA_NODES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode"}
@@ -100,6 +106,7 @@ def _data_usage_extra(result: Dict[str, Any]) -> int:
 
 _TOKEN_BASED_NODES = {"aiNode", "verificationNode", "decisionNode", "ragAnswerNode"}
 _RAG_NODES = {"indexDocsNode", "retrieveNode"}
+_ML_NODES = {"predictNode", "batchScoreNode", "driftCheckNode", "feedbackNode", "registryPromoteNode"}
 _TOKENS_PER_CREDIT = 1000  # 1 credit = 1,000 tokens, configurable here
 
 
@@ -172,6 +179,17 @@ def _charge_credits(
                     continue                       # a failed data node did no billable work (a failed quality check did)
                 cost += _data_usage_extra(result)
                 desc = f"Data · {node_type.replace('Node', '')} · {int(result.get('row_count') or 0):,} rows"
+            elif node_type in _ML_NODES:
+                # a gate that fired (drift / worse model) did real work and is billed; a node that failed before work is not
+                if "error" in result and not (result.get("drift") or result.get("feedback")):
+                    continue
+                if node_type == "batchScoreNode":
+                    cost += int(result.get("scored_rows", 0)) // 10_000       # +1 credit per full 10,000 rows scored
+                desc = {"predictNode": f"Predict · {result.get('model_endpoint', '')}",
+                        "batchScoreNode": f"Batch Score · {int(result.get('scored_rows', 0)):,} rows",
+                        "driftCheckNode": f"Drift Check · {(result.get('drift') or {}).get('status', '')}",
+                        "feedbackNode": f"Feedback · {(result.get('feedback') or {}).get('model', '')}",
+                        "registryPromoteNode": f"Registry · {result.get('model', '')} → {result.get('alias', '')}"}[node_type]
             elif node_type in _RAG_NODES:
                 if "error" in result:
                     continue                       # a node that failed before doing work is not billed
