@@ -140,6 +140,39 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     } else if (type === 'qualityGateNode') {
       data.rules = [];
       data.onFail = 'stop';
+    } else if (type === 'predictNode') {
+      data.connectionId = '';
+      data.features = [];
+      data.autoNumbers = true;
+    } else if (type === 'batchScoreNode') {
+      data.connectionId = '';
+      data.features = [];
+      data.outputColumn = 'prediction';
+      data.batchSize = 200;
+      data.maxRows = '';
+    } else if (type === 'driftCheckNode') {
+      data.referenceFile = '';
+      data.columns = [];
+      data.warnAt = 0.1;
+      data.alertAt = 0.25;
+      data.onDrift = 'stop';
+    } else if (type === 'feedbackNode') {
+      data.modelName = '';
+      data.taskType = '';
+      data.predictionColumn = 'prediction';
+      data.actualColumn = '';
+      data.threshold = '';
+      data.onFail = 'warn';
+    } else if (type === 'registryPromoteNode') {
+      data.connectionId = '';
+      data.modelName = '';
+      data.version = 'latest';
+      data.alias = '';
+      data.gates = [];
+      data.beatCurrent = false;
+      data.compareMetric = '';
+      data.higherIsBetter = true;
+      data.onFail = 'stop';
     } else if (type === 'indexDocsNode') {
       data.collection = '';
       data.source = 'files';
@@ -246,6 +279,11 @@ function getNodeLabel(type: string): string {
     sqlNode: 'SQL',
     qualityGateNode: 'Quality Check',
     indexDocsNode: 'Index Documents',
+    predictNode: 'Predict',
+    batchScoreNode: 'Batch Score',
+    driftCheckNode: 'Drift Check',
+    feedbackNode: 'Feedback',
+    registryPromoteNode: 'Promote Model',
     retrieveNode: 'Retrieve',
     ragAnswerNode: 'RAG Answer',
   };

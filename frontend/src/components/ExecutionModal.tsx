@@ -7,6 +7,7 @@ import {
   Globe, Shuffle, UserCheck, Clock,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator,
   FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote,
+  Sparkles, Gauge, Activity, Target, Rocket,
 } from 'lucide-react';
 import { WorkflowExecution, InputField } from '@/types/workflow';
 
@@ -34,6 +35,11 @@ const nodeIcons: Record<string, React.FC<{ className?: string }>> = {
   sqlNode:           ({ className }) => <FileCode2       className={className} />,
   qualityGateNode:   ({ className }) => <ClipboardCheck  className={className} />,
   indexDocsNode:     ({ className }) => <DatabaseZap     className={className} />,
+  predictNode:       ({ className }) => <Sparkles        className={className} />,
+  batchScoreNode:    ({ className }) => <Gauge           className={className} />,
+  driftCheckNode:    ({ className }) => <Activity        className={className} />,
+  feedbackNode:      ({ className }) => <Target          className={className} />,
+  registryPromoteNode: ({ className }) => <Rocket        className={className} />,
   retrieveNode:      ({ className }) => <ScanSearch      className={className} />,
   ragAnswerNode:     ({ className }) => <MessageSquareQuote className={className} />,
 };
@@ -60,6 +66,11 @@ const nodeColors: Record<string, string> = {
   sqlNode:           'text-cyan-600',
   qualityGateNode:   'text-pink-600',
   indexDocsNode:     'text-indigo-600',
+  predictNode:       'text-emerald-600',
+  batchScoreNode:    'text-emerald-600',
+  driftCheckNode:    'text-emerald-600',
+  feedbackNode:      'text-emerald-600',
+  registryPromoteNode: 'text-emerald-600',
   retrieveNode:      'text-indigo-600',
   ragAnswerNode:     'text-indigo-600',
 };
@@ -353,6 +364,38 @@ function StepSummary({ result }: { result: Record<string, unknown> | undefined }
       <p className={`text-xs mt-1 ${q.passed ? 'text-green-700' : 'text-red-600'}`}>
         {q.passed ? `All ${q.checks} checks passed` : `${q.failed_errors} of ${q.checks} checks failed`}
         {q.failed_warnings > 0 && <span className="text-amber-600"> · {q.failed_warnings} warning(s)</span>}
+      </p>
+    );
+  }
+
+  // ML nodes
+  if (result.drift && typeof result.drift === 'object') {
+    const d = result.drift as { status: string; max_psi: number; drifted: string[]; warned: string[]; columns: unknown[] };
+    const cls = d.status === 'ok' ? 'text-green-700' : d.status === 'warning' ? 'text-amber-600' : 'text-red-600';
+    return (
+      <p className={`text-xs mt-1 ${cls}`}>
+        {d.status === 'ok' ? `No drift in ${d.columns.length} columns` : d.status === 'warning' ? `Moderate shift in ${d.warned.join(', ')}` : `Drift in ${d.drifted.join(', ')}`}
+        <span className="text-gray-500"> · worst PSI {d.max_psi}</span>
+      </p>
+    );
+  }
+  if (result.feedback && typeof result.feedback === 'object') {
+    const f = result.feedback as { model: string; metric: string; value: number; rows: number; breached: boolean };
+    return (
+      <p className={`text-xs mt-1 ${f.breached ? 'text-amber-600' : 'text-green-700'}`}>
+        {f.model}: {f.metric} {f.metric === 'accuracy' ? `${(f.value * 100).toFixed(1)}%` : f.value.toFixed(3)} over {f.rows.toLocaleString()} rows{f.breached ? ' — below your threshold' : ''}
+      </p>
+    );
+  }
+  if (typeof result.promoted === 'boolean') {
+    return <p className={`text-xs mt-1 ${result.promoted ? 'text-green-700' : 'text-gray-600'}`}>{String(result.reason ?? '')}</p>;
+  }
+  if (result.prediction !== undefined && result.prediction_id) {
+    return (
+      <p className="text-xs mt-1 text-gray-700">
+        Prediction: <span className="font-mono font-semibold">{String(result.prediction)}</span>
+        {typeof result.probability === 'number' && <span className="text-gray-500"> · confidence {(result.probability * 100).toFixed(1)}%</span>}
+        {typeof result.latency_ms === 'number' && <span className="text-gray-400"> · {result.latency_ms} ms</span>}
       </p>
     );
   }

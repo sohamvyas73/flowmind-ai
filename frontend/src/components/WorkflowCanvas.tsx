@@ -14,6 +14,7 @@ import {
   HttpNode, TransformNode, HumanReviewNode,
   RuleNode, CodeNode, ValidatorNode, SwitchNode, FormatterNode, AggregatorNode,
   IndianKycNode, LoadDataNode, CleanDataNode, CombineDataNode, SummariseDataNode, SqlNode, QualityGateNode, IndexDocsNode, RetrieveNode, RagAnswerNode,
+  PredictNode, BatchScoreNode, DriftCheckNode, FeedbackNode, RegistryPromoteNode,
 } from './CustomNodes';
 import { NodePalette } from './NodePalette';
 import { NodePropertiesPanel } from './NodePropertiesPanel';
@@ -43,6 +44,11 @@ const nodeTypes = {
   sqlNode: SqlNode,
   qualityGateNode: QualityGateNode,
   indexDocsNode: IndexDocsNode,
+  predictNode: PredictNode,
+  batchScoreNode: BatchScoreNode,
+  driftCheckNode: DriftCheckNode,
+  feedbackNode: FeedbackNode,
+  registryPromoteNode: RegistryPromoteNode,
   retrieveNode: RetrieveNode,
   ragAnswerNode: RagAnswerNode,
 };
@@ -140,6 +146,11 @@ export function WorkflowCanvas() {
               sqlNode: '#06b6d4',
               qualityGateNode: '#ec4899',
               indexDocsNode: '#6366f1',
+              predictNode: '#10b981',
+              batchScoreNode: '#10b981',
+              driftCheckNode: '#10b981',
+              feedbackNode: '#10b981',
+              registryPromoteNode: '#10b981',
               retrieveNode: '#6366f1',
               ragAnswerNode: '#6366f1',
             };

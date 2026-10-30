@@ -373,6 +373,16 @@ Explicit setup, document library, collections, indexing and search. Full table i
 
 Connection types `qdrant`, `weaviate` and `chroma` are available on `/connections`.
 
+## ML — `/api/v1/ml`
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/ml/connections/{id}/models` | Registered models, versions, aliases and metrics from an MLflow connection |
+| POST | `/ml/endpoints/{id}/score` | Score one record against a model-endpoint connection |
+| GET | `/ml/feedback?model=` | Feedback history (accuracy / error per capture) |
+
+Connection types `mlflow` and `ml_endpoint` are available on `/connections`. Details: [phase5-ml.md](phase5-ml.md).
+
 ## Graph Data Schema
 
 The `graph_data` object stored in a workflow follows this structure:

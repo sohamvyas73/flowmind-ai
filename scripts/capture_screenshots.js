@@ -85,6 +85,11 @@ function kitchenSink() {
     ['indexDocsNode', { label: 'Index docs', collection: 'help', source: 'files', fileNames: [], textColumn: '', sourceColumn: '', chunkSize: 400, overlap: 50, removeMissing: false }],
     ['retrieveNode', { label: 'Find passages', collection: 'help', query: '{{question}}', topK: 3, minScore: 0 }],
     ['ragAnswerNode', { label: 'Answer from docs', collection: 'help', question: '{{question}}', topK: 3, minScore: 0, instructions: 'Answer in one or two sentences.', noAnswerText: 'I could not find this in your documents.' }],
+    ['predictNode', { label: 'Predict one', connectionId: '', features: ['tenure_months', 'monthly_spend', 'support_tickets'], autoNumbers: true }],
+    ['batchScoreNode', { label: 'Score table', connectionId: '', features: ['tenure_months', 'monthly_spend', 'support_tickets'], outputColumn: 'prediction', batchSize: 200, maxRows: '' }],
+    ['driftCheckNode', { label: 'Drift check', referenceFile: 'churn_reference.csv', columns: [], warnAt: 0.1, alertAt: 0.25, onDrift: 'stop' }],
+    ['feedbackNode', { label: 'Feedback', modelName: 'churn-model', taskType: 'classification', predictionColumn: 'prediction', actualColumn: 'churned', threshold: 0.8, onFail: 'warn' }],
+    ['registryPromoteNode', { label: 'Promote', connectionId: '', modelName: 'churn-model', version: 'latest', alias: 'champion', gates: [{ metric: 'accuracy', op: '>=', value: 0.85 }], beatCurrent: true, compareMetric: 'accuracy', higherIsBetter: true, onFail: 'stop' }],
     ['qualityGateNode', { label: 'Quality Check', onFail: 'stop', rules: [{ type: 'unique', columns: ['order_id'] }, { type: 'range', column: 'quantity', min: 1, max: 100 }] }],
   ];
   return { nodes: t.map(([type, d], i) => node(`k${i}`, type, 60 + (i % 5) * 260, 60 + Math.floor(i / 5) * 150, d)), edges: [] };
@@ -147,6 +152,8 @@ async function main() {
   await api('/runs', { method: 'POST', token: admin, body: { workflow_id: dataWf.id } });
   await api('/schedules', { method: 'POST', token: admin, body: { workflow_id: dataWf.id, name: 'Weekday morning report', cron: '0 9 * * 1-5', timezone: 'Asia/Kolkata' } }).catch(() => {});
   await api('/schedules', { method: 'POST', token: admin, body: { workflow_id: gateWf.id, name: 'Hourly order check', cron: '0 * * * *', timezone: 'UTC' } }).catch(() => {});
+  // idempotent reruns: drop previously seeded connections
+  for (const c of (await api('/connections', { token: admin }).catch(() => [])) || []) await api(`/connections/${c.id}`, { method: 'DELETE', token: admin }).catch(() => {});
   // retrieval: start from a clean, un-configured state, and add vector-database connections
   await api('/rag/settings', { method: 'DELETE', token: admin }).catch(() => {});
   await api('/rag/collections/help', { method: 'DELETE', token: admin }).catch(() => {});
@@ -157,6 +164,43 @@ async function main() {
       await api(`/connections/${c.id}/test`, { method: 'POST', token: admin });
     } catch (e) { console.log(`${type} connection seed skipped:`, e.message.split('\n')[0]); }
   }
+  // ML (Phase 5): connections to a local MLflow server and a served model, plus live workflows that use them
+  const mlUrl = process.env.MLFLOW_URL || 'http://127.0.0.1:5000';
+  const epUrl = process.env.ML_ENDPOINT_URL || 'http://127.0.0.1:5001/invocations';
+  let mlConn = null, epConn = null;
+  try {
+    mlConn = await api('/connections', { method: 'POST', token: admin, body: { name: 'MLflow (local)', type: 'mlflow', access_mode: 'read_write', host_allowlist: [new URL(mlUrl).hostname], config: { url: mlUrl } } });
+    epConn = await api('/connections', { method: 'POST', token: admin, body: { name: 'Churn model endpoint (local)', type: 'ml_endpoint', access_mode: 'read_only', host_allowlist: [new URL(epUrl).hostname], config: { url: epUrl, input_format: 'mlflow_records' } } });
+    for (const c of [mlConn, epConn]) await api(`/connections/${c.id}/test`, { method: 'POST', token: admin });
+    await fetch(`${mlUrl}/api/2.0/mlflow/registered-models/alias?name=churn-model&alias=champion`, { method: 'DELETE' }).catch(() => {});
+  } catch (e) { console.log('ML connection seed skipped:', e.message.split('\n')[0]); }
+  const FEATS = ['tenure_months', 'monthly_spend', 'support_tickets'];
+  if (mlConn && epConn) {
+    await mk(admin, 'Churn scoring (live)', chain([
+      node('l', 'loadDataNode', 60, 140, { label: 'Customers', source: 'file', fileName: 'churn_customers.csv' }),
+      node('s', 'batchScoreNode', 320, 140, { label: 'Score churn', connectionId: epConn.id, features: FEATS, outputColumn: 'prediction', batchSize: 200 }),
+      node('g', 'summariseDataNode', 580, 140, { label: 'Predictions', groupBy: ['prediction'], aggregations: [{ column: '*', fn: 'count', as: 'customers' }] }),
+    ], [['l', 's'], ['s', 'g']]));
+    await mk(admin, 'Churn accuracy check (live)', chain([
+      node('l', 'loadDataNode', 60, 140, { label: 'Customers', source: 'file', fileName: 'churn_customers.csv' }),
+      node('s', 'batchScoreNode', 320, 140, { label: 'Score churn', connectionId: epConn.id, features: FEATS, outputColumn: 'prediction', batchSize: 200 }),
+      node('f', 'feedbackNode', 580, 140, { label: 'How often right?', modelName: 'churn-model', taskType: 'classification', predictionColumn: 'prediction', actualColumn: 'churned', threshold: 0.8, onFail: 'warn' }),
+    ], [['l', 's'], ['s', 'f']]));
+    await mk(admin, 'Weekly drift check (live)', chain([
+      node('l', 'loadDataNode', 60, 140, { label: 'This week', source: 'file', fileName: 'churn_this_week.csv' }),
+      node('d', 'driftCheckNode', 320, 140, { label: 'Drift check', referenceFile: 'churn_reference.csv', onDrift: 'stop' }),
+    ], [['l', 'd']]));
+    await mk(admin, 'Churn prediction (live)', chain([
+      node('i', 'inputNode', 60, 140, { label: 'Customer', fields: FEATS.map((n, i) => ({ id: `f${i}`, name: n, type: 'number' })) }),
+      node('p', 'predictNode', 320, 140, { label: 'Churn?', connectionId: epConn.id, features: FEATS, autoNumbers: true }),
+      node('o', 'outputNode', 580, 140, { label: 'Prediction', outputType: 'api' }),
+    ], [['i', 'p'], ['p', 'o']]));
+    await mk(admin, 'Promote churn model (live)', chain([
+      node('m', 'registryPromoteNode', 140, 140, { label: 'Promote to champion', connectionId: mlConn.id, modelName: 'churn-model', version: 'latest', alias: 'champion',
+        gates: [{ metric: 'accuracy', op: '>=', value: 0.85 }], beatCurrent: true, compareMetric: 'accuracy', higherIsBetter: true, onFail: 'stop' }),
+    ], []));
+  }
+
   if (SHOP) {
     try {
       const c = await api('/connections', { method: 'POST', token: admin, body: {
@@ -222,7 +266,8 @@ async function main() {
     const names = ['KYC Verification', 'Fraud Detection', 'Document Processing', 'API Enrichment + Review', 'Loan Eligibility',
       'Data: Tidy up messy contacts', 'Data: Sales by region', 'Data: Orders + customers (join)', 'Data: Top products (SQL)',
       'Data: Quality gate on dirty orders', 'Data: Protect personal data',
-      'RAG: Index the help centre', 'RAG: Ask the help centre', 'RAG: Find passages (no AI)'];
+      'RAG: Index the help centre', 'RAG: Ask the help centre', 'RAG: Find passages (no AI)',
+      'ML: Score customers for churn', 'ML: Will this customer churn? (one record)', 'ML: Watch for data drift', 'ML: Score and check accuracy', 'ML: Promote a better model'];
     let i = 3;
     for (const n of names) {
       try {
@@ -241,7 +286,7 @@ async function main() {
       ['HTTP Request', 'http-request'], ['Transform', 'transform'], ['Human Review', 'human-review'], ['Rule Engine', 'rule-engine'],
       ['Validator', 'validator'], ['Switch Router', 'switch-router'], ['Formatter', 'formatter'], ['Aggregator', 'aggregator'],
       ['Indian KYC', 'indian-kyc'], ['Load Data', 'load-data'], ['Clean', 'clean'], ['Combine', 'combine'], ['Summarise', 'summarise'],
-      ['SQL', 'sql'], ['Quality Check', 'quality-check'], ['Index docs', 'index-documents'], ['Find passages', 'retrieve'], ['Answer from docs', 'rag-answer'],
+      ['SQL', 'sql'], ['Quality Check', 'quality-check'], ['Predict one', 'predict'], ['Score table', 'batch-score'], ['Drift check', 'drift-check'], ['Feedback', 'feedback'], ['Promote', 'promote-model'], ['Index docs', 'index-documents'], ['Find passages', 'retrieve'], ['Answer from docs', 'rag-answer'],
     ];
     const fit = page.locator('button.react-flow__controls-fitview');
     if (await fit.count()) { await fit.click(); await sleep(400); await page.locator('button.react-flow__controls-zoomout').click(); await sleep(400); await page.mouse.move(600, 760); await page.mouse.down(); await page.mouse.move(840, 800, { steps: 8 }); await page.mouse.up(); await sleep(500); }
@@ -429,6 +474,61 @@ async function main() {
     await page.waitForSelector('text=Retrieves passages');
     await shot(page, '10-retrieval', '08-rag-answer-settings', { locator: page.locator('div.absolute.right-4.top-4') });
   });
+
+  // ── 11 ML (models, scoring, drift, feedback, promotion) ────────────────────
+  const runSaved = async (name, shotName, inputs = []) => {
+    await page.reload();
+    await page.waitForSelector('button[title="Load Workflow"]');
+    await loadSaved(name);
+    await page.getByRole('button', { name: 'Execute' }).click();
+    await page.waitForSelector('text=Execute Workflow');
+    const boxes = page.locator('div.fixed input[type=text], div.fixed input[type=number], div.fixed textarea');
+    for (let i = 0; i < inputs.length; i++) await boxes.nth(i).fill(String(inputs[i]));
+    await page.getByRole('button', { name: 'Run Workflow' }).click();
+    await page.waitForSelector('text=Execution Results', { timeout: 60000 });
+    await sleep(600);
+    await shot(page, '11-ml', shotName);
+    await page.getByRole('button', { name: 'Close' }).click();
+  };
+
+  if (mlConn && epConn) {
+    await section('ml: workflow runs', async () => {
+      await runSaved('Churn prediction (live)', '01-predict-one-record', [3, 40.5, 5]);
+      await runSaved('Churn scoring (live)', '02-batch-score-results');
+      await runSaved('Churn accuracy check (live)', '03-feedback-accuracy');
+      await runSaved('Weekly drift check (live)', '04-drift-detected');
+      await runSaved('Promote churn model (live)', '05-promote-model');
+    });
+
+    await section('ml: models page', async () => {
+      await page.reload();
+      await page.waitForSelector('text=Sample Workflows');
+      await page.click('button[title^="Models"]');
+      await page.waitForSelector('text=No MLflow yet?');
+      await shot(page, '11-ml', '06-models-page-nothing-chosen', { fullPage: true });
+      await page.locator('select').nth(0).selectOption({ label: 'MLflow (local)' });
+      await page.waitForSelector('text=champion', { timeout: 20000 });
+      await page.locator('select').nth(1).selectOption({ label: 'Churn model endpoint (local)' });
+      await page.getByRole('button', { name: 'Predict', exact: true }).click();
+      await page.waitForSelector('text=Prediction:', { timeout: 20000 });
+      await sleep(400);
+      await shot(page, '11-ml', '07-models-registry-and-try-it', { fullPage: true });
+      await back();
+    });
+
+    await section('ml: connection forms', async () => {
+      await page.click('button[title="Data connections"]');
+      await page.waitForSelector('text=Data Connections');
+      await shot(page, '11-ml', '08-connections-with-ml', { fullPage: true });
+      await page.getByText('New connection').click();
+      await page.waitForSelector('text=PostgreSQL');
+      await page.locator('select').first().selectOption('mlflow');
+      await sleep(300);
+      await shot(page, '11-ml', '09-new-mlflow-connection');
+      await closeModal();
+      await back();
+    });
+  }
 
   // ── 09 admin ───────────────────────────────────────────────────────────────
   await section('admin panel', async () => {

@@ -49,6 +49,8 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 ![Run lineage](docs/images/gallery/07-connections-runs/05-run-detail-lineage.png)
 ![Retrieval setup](docs/images/gallery/10-retrieval/04-store-qdrant-tested.png)
 ![Search results](docs/images/gallery/10-retrieval/06-search-results.png)
+![Models page](docs/images/gallery/11-ml/07-models-registry-and-try-it.png)
+![Drift detected](docs/images/gallery/11-ml/04-drift-detected.png)
 
 👉 **[Full screenshot gallery — every screen and every node's settings](docs/screenshots.md)**
 
@@ -282,6 +284,8 @@ Full API docs: [docs/api-reference.md](docs/api-reference.md)
 | [Retrieval (RAG) guide](docs/rag-guide.md) | **Start here for RAG**: explicit setup, pick pgvector / Qdrant / Weaviate / Chroma, index documents, ask questions with citations |
 | [Vector stores](docs/vector-stores.md) | Supported stores, versions verified, Docker start commands |
 | [Retrieval (technical)](docs/phase4-retrieval.md) | Design, API, nodes, billing, security, what is and is not verified |
+| [ML guide](docs/ml-guide.md) | **Start here for ML**: predict, batch-score, detect drift, track accuracy, promote models — using your own MLflow and endpoint |
+| [ML (technical)](docs/phase5-ml.md) | Nodes, API, billing, security, what is and is not verified |
 | [Data Engine (technical)](docs/phase2-data-engine.md) | DuckDB isolation, storage, preview, billing, API and configuration |
 | [Quality, PII & Lineage (technical)](docs/phase3-trust-and-lineage.md) | Quality rules, PII detection, profiling, OpenLineage events and how to send them to Marquez/DataHub |
 | [Foundation: jobs, schedules, connections](docs/phase1-foundation.md) | Job queue, background runs, cron schedules, database connections |

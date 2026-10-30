@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 from app.core.config import settings
 from app.core.url_safety import safe_request, UnsafeURLError
 from app.rag import service as rag
-from app.services import code_sandbox, data_nodes, rag_nodes
+from app.services import code_sandbox, data_nodes, ml_nodes, rag_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -876,6 +876,23 @@ class NodeExecutor:
     async def execute_quality_gate_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         return await data_nodes.run_quality_gate(node_data, context)
 
+    # ── ML nodes (Phase 5) ─────────────────────────────────────────────────────
+
+    async def execute_predict_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await ml_nodes.run_predict(node_data, context)
+
+    async def execute_batch_score_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await ml_nodes.run_batch_score(node_data, context)
+
+    async def execute_drift_check_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await ml_nodes.run_drift_check(node_data, context)
+
+    async def execute_feedback_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await ml_nodes.run_feedback(node_data, context)
+
+    async def execute_registry_promote_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await ml_nodes.run_registry_promote(node_data, context)
+
     # ── Retrieval nodes (Phase 4) ──────────────────────────────────────────────
 
     async def execute_index_docs_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -1349,7 +1366,7 @@ class NodeExecutor:
 # Node types that are safe and free to run in a sample preview
 DRY_RUN_NODE_TYPES = {
     "inputNode", "outputNode", "transformNode", "formatterNode", "aggregatorNode", "ruleNode", "switchNode",
-    "validatorNode", *data_nodes.DATA_NODE_TYPES,
+    "validatorNode", *data_nodes.DATA_NODE_TYPES, "driftCheckNode",
 }
 
 
@@ -1538,6 +1555,11 @@ class WorkflowExecutor:
             "summariseDataNode": self.node_executor.execute_summarise_data_node,
             "sqlNode":           self.node_executor.execute_sql_node,
             "qualityGateNode":   self.node_executor.execute_quality_gate_node,
+            "predictNode":       self.node_executor.execute_predict_node,
+            "batchScoreNode":    self.node_executor.execute_batch_score_node,
+            "driftCheckNode":    self.node_executor.execute_drift_check_node,
+            "feedbackNode":      self.node_executor.execute_feedback_node,
+            "registryPromoteNode": self.node_executor.execute_registry_promote_node,
             "indexDocsNode":     self.node_executor.execute_index_docs_node,
             "retrieveNode":      self.node_executor.execute_retrieve_node,
             "ragAnswerNode":     self.node_executor.execute_rag_answer_node,

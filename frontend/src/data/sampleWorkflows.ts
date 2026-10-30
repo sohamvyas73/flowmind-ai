@@ -485,4 +485,53 @@ export const sampleWorkflows: SampleWorkflow[] = [
       { id: 'rf_e2', source: 'rf_2', target: 'rf_3' },
     ],
   },
+  {
+    name: 'ML: Score customers for churn',
+    description: 'Send every customer to your model and count the predictions. Needs a model endpoint connection (see the Models page) and churn_customers.csv.',
+    nodes: [
+      { id: 'ms_1', type: 'loadDataNode', position: { x: 60, y: 160 }, data: { label: 'Customers', source: 'file', fileName: 'churn_customers.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'ms_2', type: 'batchScoreNode', position: { x: 320, y: 160 }, data: { label: 'Score churn', connectionId: '', features: ['tenure_months', 'monthly_spend', 'support_tickets'], outputColumn: 'prediction', batchSize: 200, maxRows: '' } },
+      { id: 'ms_3', type: 'summariseDataNode', position: { x: 580, y: 160 }, data: { label: 'Predictions', groupBy: ['prediction'], aggregations: [{ column: '*', fn: 'count', as: 'customers' }] } },
+    ],
+    edges: [{ id: 'ms_e1', source: 'ms_1', target: 'ms_2' }, { id: 'ms_e2', source: 'ms_2', target: 'ms_3' }],
+  },
+  {
+    name: 'ML: Will this customer churn? (one record)',
+    description: 'Type in one customer and get a prediction from your model endpoint.',
+    nodes: [
+      { id: 'mp_1', type: 'inputNode', position: { x: 60, y: 160 }, data: { label: 'Customer', description: 'What we know', fields: [
+        { id: 'mp_f1', name: 'tenure_months', type: 'number' }, { id: 'mp_f2', name: 'monthly_spend', type: 'number' }, { id: 'mp_f3', name: 'support_tickets', type: 'number' }] } },
+      { id: 'mp_2', type: 'predictNode', position: { x: 320, y: 160 }, data: { label: 'Churn?', connectionId: '', features: ['tenure_months', 'monthly_spend', 'support_tickets'], autoNumbers: true } },
+      { id: 'mp_3', type: 'outputNode', position: { x: 580, y: 160 }, data: { label: 'Prediction', outputType: 'api' } },
+    ],
+    edges: [{ id: 'mp_e1', source: 'mp_1', target: 'mp_2' }, { id: 'mp_e2', source: 'mp_2', target: 'mp_3' }],
+  },
+  {
+    name: 'ML: Watch for data drift',
+    description: "Compare this week's customers with the training data and stop if they have changed. Needs churn_reference.csv and churn_this_week.csv.",
+    nodes: [
+      { id: 'md_1', type: 'loadDataNode', position: { x: 60, y: 160 }, data: { label: 'This week', source: 'file', fileName: 'churn_this_week.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'md_2', type: 'driftCheckNode', position: { x: 320, y: 160 }, data: { label: 'Drift check', referenceFile: 'churn_reference.csv', columns: [], warnAt: 0.1, alertAt: 0.25, onDrift: 'stop' } },
+    ],
+    edges: [{ id: 'md_e1', source: 'md_1', target: 'md_2' }],
+  },
+  {
+    name: 'ML: Score and check accuracy',
+    description: 'Score customers whose real outcome is known, then record how often the model was right. Needs a model endpoint connection.',
+    nodes: [
+      { id: 'mf_1', type: 'loadDataNode', position: { x: 60, y: 160 }, data: { label: 'Customers', source: 'file', fileName: 'churn_customers.csv', connectionId: '', schema: 'public', table: '', maxRows: '' } },
+      { id: 'mf_2', type: 'batchScoreNode', position: { x: 320, y: 160 }, data: { label: 'Score churn', connectionId: '', features: ['tenure_months', 'monthly_spend', 'support_tickets'], outputColumn: 'prediction', batchSize: 200, maxRows: '' } },
+      { id: 'mf_3', type: 'feedbackNode', position: { x: 580, y: 160 }, data: { label: 'How often right?', modelName: 'churn-model', taskType: 'classification', predictionColumn: 'prediction', actualColumn: 'churned', threshold: 0.8, onFail: 'warn' } },
+    ],
+    edges: [{ id: 'mf_e1', source: 'mf_1', target: 'mf_2' }, { id: 'mf_e2', source: 'mf_2', target: 'mf_3' }],
+  },
+  {
+    name: 'ML: Promote a better model',
+    description: 'Move the "champion" alias to the newest version only if its accuracy is at least 0.85 and beats the current champion. Needs a read & write MLflow connection.',
+    nodes: [
+      { id: 'mr_1', type: 'registryPromoteNode', position: { x: 60, y: 160 }, data: { label: 'Promote to champion', connectionId: '', modelName: 'churn-model', version: 'latest', alias: 'champion',
+        gates: [{ metric: 'accuracy', op: '>=', value: 0.85 }], beatCurrent: true, compareMetric: 'accuracy', higherIsBetter: true, onFail: 'stop' } },
+    ],
+    edges: [],
+  },
 ];

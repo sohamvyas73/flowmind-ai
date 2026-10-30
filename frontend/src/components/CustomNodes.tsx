@@ -5,6 +5,7 @@ import {
   Globe, Shuffle, UserCheck,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine,
   FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote,
+  Sparkles, Gauge, Activity, Target, Rocket,
 } from 'lucide-react';
 
 const nodeStyles = 'px-4 py-3 shadow-lg rounded-lg border-2 bg-white min-w-[160px]';
@@ -418,6 +419,32 @@ export const RagAnswerNode = memo(({ data, selected }: NodeProps) => (
     <Handle type="source" position={Position.Right} className="w-3 h-3 bg-indigo-500" />
   </div>
 ));
+
+const mlNode = (Icon: typeof Brain, subtitle: (d: Record<string, unknown>) => string) =>
+  memo(({ data, selected }: NodeProps) => (
+    <div className={`${nodeStyles} ${selected ? 'border-emerald-500' : 'border-gray-300'}`}>
+      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-emerald-500" />
+      <div className="flex items-center gap-2">
+        <Icon className="w-5 h-5 text-emerald-600" />
+        <div className="font-semibold text-sm">{data.label}</div>
+      </div>
+      <div className="text-xs text-gray-600 mt-1 bg-emerald-50 px-2 py-1 rounded">{subtitle(data)}</div>
+      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-emerald-500" />
+    </div>
+  ));
+
+const n = (v: unknown) => (Array.isArray(v) ? v.length : 0);
+export const PredictNode = mlNode(Sparkles, d => `${n(d.features)} features → prediction`);
+export const BatchScoreNode = mlNode(Gauge, d => `score a table · +${(d.outputColumn as string) || 'prediction'}`);
+export const DriftCheckNode = mlNode(Activity, d => d.referenceFile ? `vs ${d.referenceFile}` : 'choose a reference file');
+export const FeedbackNode = mlNode(Target, d => `${(d.modelName as string) || 'model'} · ${(d.taskType as string) || 'task?'}`);
+export const RegistryPromoteNode = mlNode(Rocket, d => `${(d.modelName as string) || 'model'} → ${(d.alias as string) || 'alias'}`);
+
+PredictNode.displayName = 'PredictNode';
+BatchScoreNode.displayName = 'BatchScoreNode';
+DriftCheckNode.displayName = 'DriftCheckNode';
+FeedbackNode.displayName = 'FeedbackNode';
+RegistryPromoteNode.displayName = 'RegistryPromoteNode';
 
 IndexDocsNode.displayName = 'IndexDocsNode';
 RetrieveNode.displayName = 'RetrieveNode';

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2, Database, CalendarClock, FlaskConical, HardDrive, DatabaseZap } from 'lucide-react';
+import { Save, Play, Trash2, Zap, FilePlus, Pencil, FolderOpen, LogOut, ShieldCheck, Coins, Settings2, Database, CalendarClock, FlaskConical, HardDrive, DatabaseZap, BrainCircuit } from 'lucide-react';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { workflowApi, PreviewResult } from '@/services/api';
 import { Workflow } from '@/types/workflow';
@@ -37,7 +37,7 @@ export function Toolbar() {
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
-  const hasDataNodes = nodes.some(n => ['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode', 'qualityGateNode'].includes(n.type || ''));
+  const hasDataNodes = nodes.some(n => ['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode', 'qualityGateNode', 'driftCheckNode'].includes(n.type || ''));
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -286,6 +286,14 @@ export function Toolbar() {
         >
           <Database className="w-4 h-4" />
           Connections
+        </button>
+        <button
+          onClick={() => setView('models')}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          title="Models: registry, try a prediction, feedback history"
+        >
+          <BrainCircuit className="w-4 h-4" />
+          Models
         </button>
         <button
           onClick={() => setView('retrieval')}

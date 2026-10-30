@@ -35,7 +35,10 @@ set_producer(PRODUCER)
 
 DATASETS_NS = "flowmind://datasets"
 FILES_NS = "flowmind://files"
-DATA_NODE_TYPES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode"}
+DATA_NODE_TYPES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode",
+                   "batchScoreNode", "driftCheckNode", "feedbackNode"}
+# nodes that hand their input table through unchanged
+PASSTHROUGH = {"qualityGateNode", "driftCheckNode", "feedbackNode"}
 
 
 def slug(s: str) -> str:
@@ -129,12 +132,12 @@ def build_events(
         out_id = r.get("dataset_id")
         inputs: List[InputDataset] = []
         outputs: List[OutputDataset] = []
-        if step["node_type"] == "qualityGateNode":
+        if step["node_type"] in PASSTHROUGH:
             if out_id:
                 q = r.get("quality") or {}
                 inputs.append(InputDataset(
                     namespace=DATASETS_NS, name=out_id, facets={"schema": _schema_facet(ds.get("columns", []))},
-                    inputFacets=_quality_facets(q, q.get("total_rows")),
+                    inputFacets=_quality_facets(q, q.get("total_rows")) if q else {},
                 ))
                 outputs.append(OutputDataset(namespace=DATASETS_NS, name=out_id))
         else:
@@ -196,7 +199,7 @@ def lineage_summary(trace: List[Dict[str, Any]], labels: Dict[str, str]) -> List
         ds = r.get("dataset") or {}
         q = r.get("quality")
         reads = []
-        if step["node_type"] != "qualityGateNode":
+        if step["node_type"] not in PASSTHROUGH:
             for e in ds.get("lineage", []):
                 reads.append({"source": e.get("source"), "operation": e.get("operation")})
         out.append({

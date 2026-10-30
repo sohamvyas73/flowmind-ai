@@ -20,6 +20,7 @@ const NODE_LABELS: Record<string, string> = {
   loadDataNode: 'Load Data', cleanDataNode: 'Clean', combineDataNode: 'Combine',
   summariseDataNode: 'Summarise', sqlNode: 'SQL', qualityGateNode: 'Quality Check',
   indexDocsNode: 'Index Documents', retrieveNode: 'Retrieve', ragAnswerNode: 'RAG Answer',
+  predictNode: 'Predict', batchScoreNode: 'Batch Score', driftCheckNode: 'Drift Check', feedbackNode: 'Feedback', registryPromoteNode: 'Promote Model',
 };
 
 // Flat-rate nodes (credits/call)
@@ -30,6 +31,7 @@ const CREDIT_COSTS: Record<string, number> = {
   humanReviewNode: 1, inputNode: 0, outputNode: 0,
   loadDataNode: 1, cleanDataNode: 1, combineDataNode: 2, summariseDataNode: 1, sqlNode: 2, qualityGateNode: 1,
   indexDocsNode: 2, retrieveNode: 1,
+  predictNode: 2, batchScoreNode: 3, driftCheckNode: 1, feedbackNode: 1, registryPromoteNode: 1,
 };
 
 // Token-based nodes — billed at 1 credit per 1,000 tokens (min 1)
