@@ -61,7 +61,7 @@ const node = (id, type, x, y, data) => ({ id, type, position: { x, y }, data: { 
 const chain = (nodes, pairs) => ({ nodes, edges: pairs.map(([a, b], i) => ({ id: `e${i}`, source: a, target: b })) });
 
 // A workflow containing one node of every kind, so each node's settings panel can be captured.
-function kitchenSink() {
+function kitchenSink(whId = '') {
   const t = [
     ['inputNode', { label: 'Customer input', fields: [{ id: 'f1', name: 'customer_id', type: 'text' }, { id: 'f2', name: 'amount', type: 'number' }] }],
     ['aiNode', { label: 'AI Agent', aiTask: 'extraction', outputFormat: 'json', temperature: 0.2, prompt: 'Extract the customer name and the requested amount.' }],
@@ -82,6 +82,9 @@ function kitchenSink() {
     ['combineDataNode', { label: 'Combine', joinType: 'inner', keys: [{ left: 'customer_id', right: 'customer_id' }], swap: false }],
     ['summariseDataNode', { label: 'Summarise', groupBy: ['status'], aggregations: [{ column: '*', fn: 'count', as: 'orders' }] }],
     ['sqlNode', { label: 'SQL', query: 'SELECT status, count(*) AS n\nFROM input\nGROUP BY status' }],
+    ['loadDataNode', { label: 'Warehouse table', source: 'connection', connectionId: whId, schema: '', table: 'sales', runOn: 'warehouse', columns: [], maxRows: '' }],
+    ['pullDataNode', { label: 'Pull to FlowMind', maxRows: '' }],
+    ['writeWarehouseNode', { label: 'Save table', connectionId: whId, schema: '', table: 'revenue_by_region', mode: 'create' }],
     ['indexDocsNode', { label: 'Index docs', collection: 'help', source: 'files', fileNames: [], textColumn: '', sourceColumn: '', chunkSize: 400, overlap: 50, removeMissing: false }],
     ['retrieveNode', { label: 'Find passages', collection: 'help', query: '{{question}}', topK: 3, minScore: 0 }],
     ['ragAnswerNode', { label: 'Answer from docs', collection: 'help', question: '{{question}}', topK: 3, minScore: 0, instructions: 'Answer in one or two sentences.', noAnswerText: 'I could not find this in your documents.' }],
@@ -117,10 +120,31 @@ async function main() {
     for (const w of (await api('/workflows/workflows', { token: tok }).catch(() => [])) || []) await api(`/workflows/workflows/${w.id}`, { method: 'DELETE', token: tok }).catch(() => {});
   }
 
+  // idempotent reruns: drop previously seeded connections
+  for (const c of (await api('/connections', { token: admin }).catch(() => [])) || []) await api(`/connections/${c.id}`, { method: 'DELETE', token: admin }).catch(() => {});
+
   const mk = (tok, name, graph) => api('/workflows/workflows', { method: 'POST', token: tok, body: { name, graph_data: graph } });
   const exec = (tok, wf, input = {}) => api(`/workflows/workflows/${wf.id}/execute`, { method: 'POST', token: tok, body: { workflow_id: wf.id, input_data: input } });
 
-  const sink = await mk(admin, 'All node types (reference)', kitchenSink());
+  // Warehouses (Phase 6): a local ClickHouse and a PostgreSQL database, each filled with the example tables
+  const chUrl = process.env.CLICKHOUSE_URL || 'http://127.0.0.1:8123';
+  const WH_PG = process.env.WAREHOUSE_PG ? new URL(process.env.WAREHOUSE_PG) : null;
+  let chConn = null, pgWh = null;
+  try {
+    chConn = await api('/connections', { method: 'POST', token: admin, body: { name: 'ClickHouse (local Docker)', type: 'clickhouse', access_mode: 'read_write', host_allowlist: [new URL(chUrl).hostname],
+      config: { url: chUrl, user: process.env.CLICKHOUSE_USER || 'fm', password: process.env.CLICKHOUSE_PASSWORD || 'fmpass', database: process.env.CLICKHOUSE_DB || 'shop' } } });
+    await api(`/connections/${chConn.id}/test`, { method: 'POST', token: admin });
+    await api(`/warehouse/connections/${chConn.id}/examples`, { method: 'POST', token: admin, body: {} });
+  } catch (e) { console.log('ClickHouse seed skipped:', e.message.split('\n')[0]); chConn = null; }
+  if (WH_PG) {
+    try {
+      pgWh = await api('/connections', { method: 'POST', token: admin, body: { name: 'Warehouse database (PostgreSQL)', type: 'postgres', access_mode: 'read_write', host_allowlist: [WH_PG.hostname],
+        config: { host: WH_PG.hostname, port: Number(WH_PG.port || 5432), database: WH_PG.pathname.slice(1), user: decodeURIComponent(WH_PG.username), password: decodeURIComponent(WH_PG.password || ''), sslmode: 'disable' } } });
+      await api(`/connections/${pgWh.id}/test`, { method: 'POST', token: admin });
+      await api(`/warehouse/connections/${pgWh.id}/examples`, { method: 'POST', token: admin, body: {} });
+    } catch (e) { console.log('Warehouse PostgreSQL seed skipped:', e.message.split('\n')[0]); pgWh = null; }
+  }
+  const sink = await mk(admin, 'All node types (reference)', kitchenSink(chConn ? chConn.id : ''));
   const precheck = await mk(admin, 'Loan pre-check (no AI)', chain([
     node('in', 'inputNode', 60, 140, { label: 'Applicant', fields: [{ id: 'a', name: 'full_name', type: 'text' }, { id: 'b', name: 'income', type: 'number' }, { id: 'c', name: 'loan_amount', type: 'number' }] }),
     node('val', 'validatorNode', 300, 140, { label: 'Check fields', validationRules: [{ field: 'income', required: true, fieldType: 'number', min: 0 }, { field: 'loan_amount', required: true, fieldType: 'number', min: 1 }] }),
@@ -152,8 +176,6 @@ async function main() {
   await api('/runs', { method: 'POST', token: admin, body: { workflow_id: dataWf.id } });
   await api('/schedules', { method: 'POST', token: admin, body: { workflow_id: dataWf.id, name: 'Weekday morning report', cron: '0 9 * * 1-5', timezone: 'Asia/Kolkata' } }).catch(() => {});
   await api('/schedules', { method: 'POST', token: admin, body: { workflow_id: gateWf.id, name: 'Hourly order check', cron: '0 * * * *', timezone: 'UTC' } }).catch(() => {});
-  // idempotent reruns: drop previously seeded connections
-  for (const c of (await api('/connections', { token: admin }).catch(() => [])) || []) await api(`/connections/${c.id}`, { method: 'DELETE', token: admin }).catch(() => {});
   // retrieval: start from a clean, un-configured state, and add vector-database connections
   await api('/rag/settings', { method: 'DELETE', token: admin }).catch(() => {});
   await api('/rag/collections/help', { method: 'DELETE', token: admin }).catch(() => {});
@@ -164,6 +186,34 @@ async function main() {
       await api(`/connections/${c.id}/test`, { method: 'POST', token: admin });
     } catch (e) { console.log(`${type} connection seed skipped:`, e.message.split('\n')[0]); }
   }
+
+  // ── 12 warehouses (pushdown) ───────────────────────────────────────────────
+  if (chConn) {
+    const whLoad = (id, table, label) => node(id, 'loadDataNode', 60, 140, { label, source: 'connection', connectionId: chConn.id, schema: '', table, runOn: 'warehouse' });
+    const wfRev = await mk(admin, 'Revenue by region (in ClickHouse)', chain([
+      whLoad('l', 'sales', 'Sales (in ClickHouse)'),
+      node('s', 'summariseDataNode', 340, 140, { label: 'Revenue by region', groupBy: ['region'], aggregations: [{ column: 'revenue', fn: 'sum', as: 'total_revenue' }, { column: 'units', fn: 'sum', as: 'total_units' }, { column: '*', fn: 'count', as: 'days' }] }),
+    ], [['l', 's']]));
+    const wfJoin = { nodes: [
+      node('o', 'loadDataNode', 60, 60, { label: 'Orders', source: 'connection', connectionId: chConn.id, table: 'orders', runOn: 'warehouse' }),
+      node('c', 'loadDataNode', 60, 240, { label: 'Customers', source: 'connection', connectionId: chConn.id, table: 'customers', runOn: 'warehouse' }),
+      node('j', 'combineDataNode', 340, 140, { label: 'Orders + customers', joinType: 'inner', keys: [{ left: 'customer_id', right: 'customer_id' }] }),
+      node('s', 'summariseDataNode', 620, 140, { label: 'Spend by tier', groupBy: ['tier'], aggregations: [{ column: 'quantity', fn: 'sum', as: 'units' }, { column: '*', fn: 'count', as: 'orders' }] }),
+    ], edges: [{ id: 'e1', source: 'o', target: 'j' }, { id: 'e2', source: 'c', target: 'j' }, { id: 'e3', source: 'j', target: 's' }] };
+    await mk(admin, 'Join and summarise (in ClickHouse)', wfJoin);
+    await mk(admin, 'Summarise, pull, check (live)', chain([
+      whLoad('l', 'sales', 'Sales (in ClickHouse)'),
+      node('s', 'summariseDataNode', 340, 140, { label: 'Revenue by region', groupBy: ['region'], aggregations: [{ column: 'revenue', fn: 'sum', as: 'total_revenue' }] }),
+      node('p', 'pullDataNode', 620, 140, { label: 'Bring into FlowMind' }),
+      node('q', 'qualityGateNode', 900, 140, { label: 'Check the result', onFail: 'stop', rules: [{ type: 'not_null', columns: ['region', 'total_revenue'] }] }),
+    ], [['l', 's'], ['s', 'p'], ['p', 'q']]));
+    await mk(admin, 'Save revenue table (in ClickHouse)', chain([
+      whLoad('l', 'sales', 'Sales (in ClickHouse)'),
+      node('s', 'summariseDataNode', 340, 140, { label: 'Revenue by region', groupBy: ['region'], aggregations: [{ column: 'revenue', fn: 'sum', as: 'total_revenue' }] }),
+      node('w', 'writeWarehouseNode', 620, 140, { label: 'Save summary', connectionId: chConn.id, table: 'revenue_by_region', mode: 'replace' }),
+    ], [['l', 's'], ['s', 'w']]));
+  }
+
   // ML (Phase 5): connections to a local MLflow server and a served model, plus live workflows that use them
   const mlUrl = process.env.MLFLOW_URL || 'http://127.0.0.1:5000';
   const epUrl = process.env.ML_ENDPOINT_URL || 'http://127.0.0.1:5001/invocations';
@@ -267,6 +317,7 @@ async function main() {
       'Data: Tidy up messy contacts', 'Data: Sales by region', 'Data: Orders + customers (join)', 'Data: Top products (SQL)',
       'Data: Quality gate on dirty orders', 'Data: Protect personal data',
       'RAG: Index the help centre', 'RAG: Ask the help centre', 'RAG: Find passages (no AI)',
+      'Warehouse: Revenue by region (data stays put)', 'Warehouse: Join and summarise in place', 'Warehouse: Summarise, then bring the result in', 'Warehouse: Save a summary table',
       'ML: Score customers for churn', 'ML: Will this customer churn? (one record)', 'ML: Watch for data drift', 'ML: Score and check accuracy', 'ML: Promote a better model'];
     let i = 3;
     for (const n of names) {
@@ -286,7 +337,7 @@ async function main() {
       ['HTTP Request', 'http-request'], ['Transform', 'transform'], ['Human Review', 'human-review'], ['Rule Engine', 'rule-engine'],
       ['Validator', 'validator'], ['Switch Router', 'switch-router'], ['Formatter', 'formatter'], ['Aggregator', 'aggregator'],
       ['Indian KYC', 'indian-kyc'], ['Load Data', 'load-data'], ['Clean', 'clean'], ['Combine', 'combine'], ['Summarise', 'summarise'],
-      ['SQL', 'sql'], ['Quality Check', 'quality-check'], ['Predict one', 'predict'], ['Score table', 'batch-score'], ['Drift check', 'drift-check'], ['Feedback', 'feedback'], ['Promote', 'promote-model'], ['Index docs', 'index-documents'], ['Find passages', 'retrieve'], ['Answer from docs', 'rag-answer'],
+      ['SQL', 'sql'], ['Quality Check', 'quality-check'], ['Warehouse table', 'load-data-warehouse'], ['Pull to FlowMind', 'pull-to-flowmind'], ['Save table', 'save-to-warehouse'], ['Predict one', 'predict'], ['Score table', 'batch-score'], ['Drift check', 'drift-check'], ['Feedback', 'feedback'], ['Promote', 'promote-model'], ['Index docs', 'index-documents'], ['Find passages', 'retrieve'], ['Answer from docs', 'rag-answer'],
     ];
     const fit = page.locator('button.react-flow__controls-fitview');
     if (await fit.count()) { await fit.click(); await sleep(400); await page.locator('button.react-flow__controls-zoomout').click(); await sleep(400); await page.mouse.move(600, 760); await page.mouse.down(); await page.mouse.move(840, 800, { steps: 8 }); await page.mouse.up(); await sleep(500); }
@@ -476,7 +527,7 @@ async function main() {
   });
 
   // ── 11 ML (models, scoring, drift, feedback, promotion) ────────────────────
-  const runSaved = async (name, shotName, inputs = []) => {
+  const runSaved = async (name, shotName, inputs = [], area = '11-ml') => {
     await page.reload();
     await page.waitForSelector('button[title="Load Workflow"]');
     await loadSaved(name);
@@ -487,7 +538,7 @@ async function main() {
     await page.getByRole('button', { name: 'Run Workflow' }).click();
     await page.waitForSelector('text=Execution Results', { timeout: 60000 });
     await sleep(600);
-    await shot(page, '11-ml', shotName);
+    await shot(page, area, shotName);
     await page.getByRole('button', { name: 'Close' }).click();
   };
 
@@ -525,6 +576,40 @@ async function main() {
       await page.locator('select').first().selectOption('mlflow');
       await sleep(300);
       await shot(page, '11-ml', '09-new-mlflow-connection');
+      await closeModal();
+      await back();
+    });
+  }
+
+  // ── 12 warehouses: screens ─────────────────────────────────────────────────
+  if (chConn) {
+    await section('warehouses: pushdown runs', async () => {
+      await runSaved('Revenue by region (in ClickHouse)', '02-pushdown-summarise', [], '12-warehouses');
+      await runSaved('Join and summarise (in ClickHouse)', '03-pushdown-join', [], '12-warehouses');
+      await runSaved('Summarise, pull, check (live)', '04-pull-and-quality-check', [], '12-warehouses');
+      await runSaved('Save revenue table (in ClickHouse)', '05-save-to-warehouse', [], '12-warehouses');
+    });
+    await section('warehouses: preview shows the warehouse SQL', async () => {
+      await page.reload();
+      await page.waitForSelector('button[title="Load Workflow"]');
+      await loadSaved('Join and summarise (in ClickHouse)');
+      await page.getByRole('button', { name: 'Preview data', exact: true }).click();
+      await page.waitForSelector('text=SQL this step ran', { timeout: 40000 });
+      await shot(page, '12-warehouses', '06-preview-warehouse-sql');
+      await closeModal();
+    });
+    await section('warehouses: connections', async () => {
+      await page.click('button[title="Data connections"]');
+      await page.waitForSelector('text=Data Connections');
+      await shot(page, '12-warehouses', '01-warehouse-connections', { fullPage: true });
+      await page.getByText('New connection').click();
+      await page.waitForSelector('text=PostgreSQL');
+      await page.locator('select').first().selectOption('clickhouse');
+      await sleep(300);
+      await shot(page, '12-warehouses', '07-new-clickhouse-connection');
+      await page.locator('select').first().selectOption('snowflake');
+      await sleep(300);
+      await shot(page, '12-warehouses', '08-new-snowflake-connection');
       await closeModal();
       await back();
     });

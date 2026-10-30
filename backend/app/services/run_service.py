@@ -87,6 +87,8 @@ CREDIT_COSTS: Dict[str, int] = {
     "retrieveNode": 1,
     "ragAnswerNode": 1,
     # ML (Phase 5): scoring happens on the user's own endpoint; these are the platform's handling costs
+    "pullDataNode": 1,
+    "writeWarehouseNode": 2,
     "predictNode": 2,
     "batchScoreNode": 3,
     "driftCheckNode": 1,
@@ -94,7 +96,7 @@ CREDIT_COSTS: Dict[str, int] = {
     "registryPromoteNode": 1,
 }
 
-_DATA_NODES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode"}
+_DATA_NODES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode", "pullDataNode", "writeWarehouseNode"}
 _SCAN_BYTES_PER_CREDIT = 100 * 1024 * 1024     # +1 credit per full 100 MB scanned
 _COMPUTE_SECONDS_PER_CREDIT = 30               # +1 credit per full 30 s of compute
 

@@ -140,6 +140,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     } else if (type === 'qualityGateNode') {
       data.rules = [];
       data.onFail = 'stop';
+    } else if (type === 'pullDataNode') {
+      data.maxRows = '';
+    } else if (type === 'writeWarehouseNode') {
+      data.connectionId = '';
+      data.schema = '';
+      data.table = '';
+      data.mode = '';
     } else if (type === 'predictNode') {
       data.connectionId = '';
       data.features = [];
@@ -279,6 +286,8 @@ function getNodeLabel(type: string): string {
     sqlNode: 'SQL',
     qualityGateNode: 'Quality Check',
     indexDocsNode: 'Index Documents',
+    pullDataNode: 'Pull to FlowMind',
+    writeWarehouseNode: 'Save to Warehouse',
     predictNode: 'Predict',
     batchScoreNode: 'Batch Score',
     driftCheckNode: 'Drift Check',

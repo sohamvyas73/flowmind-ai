@@ -5,6 +5,7 @@ export type NodeType =
   | 'indianKycNode'
   | 'loadDataNode' | 'cleanDataNode' | 'combineDataNode' | 'summariseDataNode' | 'sqlNode' | 'qualityGateNode'
   | 'indexDocsNode' | 'retrieveNode' | 'ragAnswerNode'
+  | 'pullDataNode' | 'writeWarehouseNode'
   | 'predictNode' | 'batchScoreNode' | 'driftCheckNode' | 'feedbackNode' | 'registryPromoteNode';
 
 export interface InputField {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote, Sparkles, Gauge, Activity, Target, Rocket } from 'lucide-react';
+import { Database, Brain, CheckCircle, GitBranch, Send, Globe, Shuffle, UserCheck, LayoutTemplate, Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator, ScanLine, FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote, Sparkles, Gauge, Activity, Target, Rocket, ArrowDownToLine, DatabaseBackup } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { healthCheck, configApi } from '@/services/api';
@@ -223,6 +223,24 @@ const nodeTypeList: NodeTypeConfig[] = [
     border: 'border-indigo-200',
     bg: 'bg-indigo-50',
     text: 'text-indigo-700',
+  },
+  {
+    type: 'pullDataNode',
+    label: 'Pull to FlowMind',
+    description: 'Bring a warehouse table in',
+    icon: ({ className }) => <ArrowDownToLine className={className} />,
+    border: 'border-cyan-200',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
+  },
+  {
+    type: 'writeWarehouseNode',
+    label: 'Save to Warehouse',
+    description: 'Write a table back',
+    icon: ({ className }) => <DatabaseBackup className={className} />,
+    border: 'border-cyan-200',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
   },
   {
     type: 'predictNode',

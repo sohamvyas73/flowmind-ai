@@ -534,4 +534,45 @@ export const sampleWorkflows: SampleWorkflow[] = [
     ],
     edges: [],
   },
+  {
+    name: 'Warehouse: Revenue by region (data stays put)',
+    description: 'Summarise a warehouse table without copying it anywhere: the work runs inside your warehouse. Needs a warehouse connection with the example tables (Connections page → Load example tables).',
+    nodes: [
+      { id: 'wr_1', type: 'loadDataNode', position: { x: 60, y: 160 }, data: { label: 'Sales (in warehouse)', source: 'connection', connectionId: '', schema: '', table: 'sales', runOn: 'warehouse', columns: [], maxRows: '' } },
+      { id: 'wr_2', type: 'summariseDataNode', position: { x: 340, y: 160 }, data: { label: 'Revenue by region', groupBy: ['region'], aggregations: [{ column: 'revenue', fn: 'sum', as: 'total_revenue' }, { column: 'units', fn: 'sum', as: 'total_units' }] } },
+    ],
+    edges: [{ id: 'wr_e1', source: 'wr_1', target: 'wr_2' }],
+  },
+  {
+    name: 'Warehouse: Join and summarise in place',
+    description: 'Join orders to customers and total spend per tier — entirely inside your warehouse.',
+    nodes: [
+      { id: 'wj_1', type: 'loadDataNode', position: { x: 60, y: 80 }, data: { label: 'Orders', source: 'connection', connectionId: '', schema: '', table: 'orders', runOn: 'warehouse', columns: [], maxRows: '' } },
+      { id: 'wj_2', type: 'loadDataNode', position: { x: 60, y: 260 }, data: { label: 'Customers', source: 'connection', connectionId: '', schema: '', table: 'customers', runOn: 'warehouse', columns: [], maxRows: '' } },
+      { id: 'wj_3', type: 'combineDataNode', position: { x: 340, y: 160 }, data: { label: 'Orders + customers', joinType: 'inner', keys: [{ left: 'customer_id', right: 'customer_id' }], swap: false } },
+      { id: 'wj_4', type: 'summariseDataNode', position: { x: 620, y: 160 }, data: { label: 'Spend by tier', groupBy: ['tier'], aggregations: [{ column: 'quantity', fn: 'sum', as: 'units' }, { column: '*', fn: 'count', as: 'orders' }] } },
+    ],
+    edges: [{ id: 'wj_e1', source: 'wj_1', target: 'wj_3' }, { id: 'wj_e2', source: 'wj_2', target: 'wj_3' }, { id: 'wj_e3', source: 'wj_3', target: 'wj_4' }],
+  },
+  {
+    name: 'Warehouse: Summarise, then bring the result in',
+    description: 'Do the heavy lifting in the warehouse, then Pull only the small result into FlowMind and check its quality.',
+    nodes: [
+      { id: 'wp_1', type: 'loadDataNode', position: { x: 40, y: 160 }, data: { label: 'Sales (in warehouse)', source: 'connection', connectionId: '', schema: '', table: 'sales', runOn: 'warehouse', columns: [], maxRows: '' } },
+      { id: 'wp_2', type: 'summariseDataNode', position: { x: 300, y: 160 }, data: { label: 'Revenue by region', groupBy: ['region'], aggregations: [{ column: 'revenue', fn: 'sum', as: 'total_revenue' }] } },
+      { id: 'wp_3', type: 'pullDataNode', position: { x: 560, y: 160 }, data: { label: 'Bring into FlowMind', maxRows: '' } },
+      { id: 'wp_4', type: 'qualityGateNode', position: { x: 820, y: 160 }, data: { label: 'Check the result', onFail: 'stop', rules: [{ type: 'not_null', columns: ['region', 'total_revenue'] }] } },
+    ],
+    edges: [{ id: 'wp_e1', source: 'wp_1', target: 'wp_2' }, { id: 'wp_e2', source: 'wp_2', target: 'wp_3' }, { id: 'wp_e3', source: 'wp_3', target: 'wp_4' }],
+  },
+  {
+    name: 'Warehouse: Save a summary table',
+    description: 'Create a new table in your warehouse from a summary — the data never leaves it. Needs a Read & write connection; pick a dedicated schema.',
+    nodes: [
+      { id: 'ws_1', type: 'loadDataNode', position: { x: 40, y: 160 }, data: { label: 'Sales (in warehouse)', source: 'connection', connectionId: '', schema: '', table: 'sales', runOn: 'warehouse', columns: [], maxRows: '' } },
+      { id: 'ws_2', type: 'summariseDataNode', position: { x: 300, y: 160 }, data: { label: 'Revenue by region', groupBy: ['region'], aggregations: [{ column: 'revenue', fn: 'sum', as: 'total_revenue' }] } },
+      { id: 'ws_3', type: 'writeWarehouseNode', position: { x: 560, y: 160 }, data: { label: 'Save summary', connectionId: '', schema: '', table: 'revenue_by_region', mode: '' } },
+    ],
+    edges: [{ id: 'ws_e1', source: 'ws_1', target: 'ws_2' }, { id: 'ws_e2', source: 'ws_2', target: 'ws_3' }],
+  },
 ];

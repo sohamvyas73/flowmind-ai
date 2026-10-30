@@ -7,7 +7,7 @@ import {
   Globe, Shuffle, UserCheck, Clock,
   Scale, Terminal, ShieldCheck, GitFork, FileText, Calculator,
   FileSpreadsheet, Eraser, Merge, Sigma, FileCode2, ClipboardCheck, DatabaseZap, ScanSearch, MessageSquareQuote,
-  Sparkles, Gauge, Activity, Target, Rocket,
+  Sparkles, Gauge, Activity, Target, Rocket, ArrowDownToLine, DatabaseBackup,
 } from 'lucide-react';
 import { WorkflowExecution, InputField } from '@/types/workflow';
 
@@ -35,6 +35,8 @@ const nodeIcons: Record<string, React.FC<{ className?: string }>> = {
   sqlNode:           ({ className }) => <FileCode2       className={className} />,
   qualityGateNode:   ({ className }) => <ClipboardCheck  className={className} />,
   indexDocsNode:     ({ className }) => <DatabaseZap     className={className} />,
+  pullDataNode:      ({ className }) => <ArrowDownToLine className={className} />,
+  writeWarehouseNode: ({ className }) => <DatabaseBackup className={className} />,
   predictNode:       ({ className }) => <Sparkles        className={className} />,
   batchScoreNode:    ({ className }) => <Gauge           className={className} />,
   driftCheckNode:    ({ className }) => <Activity        className={className} />,
@@ -66,6 +68,8 @@ const nodeColors: Record<string, string> = {
   sqlNode:           'text-cyan-600',
   qualityGateNode:   'text-pink-600',
   indexDocsNode:     'text-indigo-600',
+  pullDataNode:      'text-cyan-600',
+  writeWarehouseNode: 'text-cyan-600',
   predictNode:       'text-emerald-600',
   batchScoreNode:    'text-emerald-600',
   driftCheckNode:    'text-emerald-600',
@@ -364,6 +368,22 @@ function StepSummary({ result }: { result: Record<string, unknown> | undefined }
       <p className={`text-xs mt-1 ${q.passed ? 'text-green-700' : 'text-red-600'}`}>
         {q.passed ? `All ${q.checks} checks passed` : `${q.failed_errors} of ${q.checks} checks failed`}
         {q.failed_warnings > 0 && <span className="text-amber-600"> · {q.failed_warnings} warning(s)</span>}
+      </p>
+    );
+  }
+
+  // Warehouse (pushdown) nodes: data stays where it is
+  if (result.written && typeof result.written === 'object') {
+    const w = result.written as { table: string; mode: string; rows?: number | null; connection: string; how: string };
+    return <p className="text-xs mt-1 text-green-700">Table <span className="font-mono">{w.table}</span> {w.mode === 'append' ? 'appended' : w.mode === 'replace' ? 'replaced' : 'created'} in {w.connection}{w.rows != null ? ` · ${w.rows.toLocaleString()} rows` : ''} — {w.how}</p>;
+  }
+  if (result.pushdown && typeof result.pushdown === 'object') {
+    const d = result.dataset as { columns?: { name: string }[] } | undefined;
+    const names = (d?.columns ?? []).map(c => c.name);
+    return (
+      <p className="text-xs text-cyan-700 mt-1">
+        Runs in <span className="font-medium">{String(result.runs_in)}</span> — data stays in your warehouse · {names.length} columns
+        {names.length > 0 && <span className="font-mono text-gray-500"> ({names.slice(0, 6).join(', ')}{names.length > 6 ? ', …' : ''})</span>}
       </p>
     );
   }

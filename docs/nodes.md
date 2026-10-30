@@ -804,3 +804,18 @@ model code inside FlowMind — see the [ML guide](ml-guide.md) and [technical re
 | **Promote Model** | Moves an MLflow alias to a version if gates pass | `modelName`, `version`, `alias`, `gates[]` | `promoted, gates, previous_version` |
 
 ![Promote Model settings](images/gallery/04-node-settings/25-promote-model.png)
+
+---
+
+## Warehouse nodes (pushdown)
+
+Clean, Combine, Summarise and SQL run **inside your warehouse** when their input does (set *Load Data → Where should the work run?
+→ In my warehouse*). Two extra nodes move data across the boundary on purpose — see the [warehouse guide](warehouse-guide.md) and
+the [technical reference](phase6-warehouses.md).
+
+| Node | Does | Key settings |
+|---|---|---|
+| **Pull to FlowMind** | Copies a warehouse table into FlowMind so rows-needing steps (Quality Check, AI, ML) can use it | `maxRows` |
+| **Save to Warehouse** | Writes the connected table into your warehouse; nothing is chosen for you | `connectionId` (read & write), `schema`, `table`, `mode` = create / append / replace |
+
+![Pull and Save settings](images/gallery/04-node-settings/22-pull-to-flowmind.png)

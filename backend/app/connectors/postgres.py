@@ -32,6 +32,8 @@ class PostgresConnector(Connector):
             FieldSpec(name="sslmode", label="SSL mode", type="select", default="require",
                       options=["disable", "prefer", "require", "verify-full"],
                       help="'require' or stronger is recommended."),
+            FieldSpec(name="write_schema", label="Only allow writing to this schema", required=False,
+                      help="Optional guard-rail for the Save to warehouse node: any other schema is refused."),
         ],
     )
 
