@@ -14,7 +14,7 @@ import {
   HttpNode, TransformNode, HumanReviewNode,
   RuleNode, CodeNode, ValidatorNode, SwitchNode, FormatterNode, AggregatorNode,
   IndianKycNode, LoadDataNode, CleanDataNode, CombineDataNode, SummariseDataNode, SqlNode, QualityGateNode, IndexDocsNode, RetrieveNode, RagAnswerNode,
-  PredictNode, BatchScoreNode, DriftCheckNode, FeedbackNode, RegistryPromoteNode,
+  PullDataNode, WriteWarehouseNode, PredictNode, BatchScoreNode, DriftCheckNode, FeedbackNode, RegistryPromoteNode,
 } from './CustomNodes';
 import { NodePalette } from './NodePalette';
 import { NodePropertiesPanel } from './NodePropertiesPanel';
@@ -44,6 +44,8 @@ const nodeTypes = {
   sqlNode: SqlNode,
   qualityGateNode: QualityGateNode,
   indexDocsNode: IndexDocsNode,
+  pullDataNode: PullDataNode,
+  writeWarehouseNode: WriteWarehouseNode,
   predictNode: PredictNode,
   batchScoreNode: BatchScoreNode,
   driftCheckNode: DriftCheckNode,
@@ -120,7 +122,7 @@ export function WorkflowCanvas() {
         className="bg-gray-50"
       >
         <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
-        <Controls />
+        <Controls className="!left-[288px]" />
         <MiniMap
           nodeColor={(node) => {
             const colors: { [key: string]: string } = {
@@ -146,6 +148,8 @@ export function WorkflowCanvas() {
               sqlNode: '#06b6d4',
               qualityGateNode: '#ec4899',
               indexDocsNode: '#6366f1',
+              pullDataNode: '#06b6d4',
+              writeWarehouseNode: '#06b6d4',
               predictNode: '#10b981',
               batchScoreNode: '#10b981',
               driftCheckNode: '#10b981',

@@ -6,7 +6,7 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { DatasetTable } from '@/components/DatasetTable';
 import {
-  connectionsApi, Connection, ConnectorSpec, DatasetRef, DiscoveredTable, FieldSpec,
+  connectionsApi, warehouseApi, Connection, ConnectorSpec, DatasetRef, DiscoveredTable, FieldSpec,
 } from '@/services/api';
 
 const SECRET_SENTINEL = '__secret__';
@@ -152,6 +152,22 @@ function ConnectionCard({ conn, spec, isAdmin, onEdit, onBrowse, onChanged }: {
     }
   };
 
+  const [loadingExamples, setLoadingExamples] = useState(false);
+  const canExamples = (conn.type === 'postgres' || conn.type === 'clickhouse') && conn.access_mode === 'read_write';
+  const loadExamples = async () => {
+    if (!window.confirm('Create the example tables (customers, orders, sales, …) in this database? Existing tables with those names are replaced.')) return;
+    setLoadingExamples(true);
+    setMsg(null);
+    try {
+      const r = await warehouseApi.installExamples(conn.id);
+      setMsg({ ok: true, text: `Created ${r.tables.length} example tables in ${r.schema_name}: ${r.tables.join(', ')}` });
+    } catch (e) {
+      setMsg({ ok: false, text: errMsg(e, 'Could not create the example tables') });
+    } finally {
+      setLoadingExamples(false);
+    }
+  };
+
   const remove = async () => {
     if (!window.confirm(`Delete connection "${conn.name}"?`)) return;
     setDeleting(true);
@@ -170,9 +186,13 @@ function ConnectionCard({ conn, spec, isAdmin, onEdit, onBrowse, onChanged }: {
       ? { icon: <CheckCircle2 className="w-3.5 h-3.5" />, text: 'Connected', cls: 'text-green-700 bg-green-100' }
       : { icon: <XCircle className="w-3.5 h-3.5" />, text: 'Failed', cls: 'text-red-700 bg-red-100' };
 
-  const target = conn.type === 'postgres'
-    ? `${conn.config.host ?? ''}:${conn.config.port ?? ''}/${conn.config.database ?? ''}`
-    : String(conn.config.base_url ?? conn.config.url ?? '');
+  const c = conn.config;
+  const target = (conn.type === 'postgres' || conn.type === 'redshift')
+    ? `${c.host ?? ''}:${c.port ?? ''}/${c.database ?? ''}`
+    : conn.type === 'snowflake' ? `${c.account ?? ''}${c.database ? ' / ' + c.database : ''}`
+    : conn.type === 'bigquery' ? `${c.project ?? ''}${c.dataset ? ' / ' + c.dataset : ''}`
+    : conn.type === 'databricks' ? `${c.host ?? ''}`
+    : String(c.base_url ?? c.url ?? '');
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -213,6 +233,11 @@ function ConnectionCard({ conn, spec, isAdmin, onEdit, onBrowse, onChanged }: {
           >
             {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />} Test
           </button>
+          {canExamples && (
+            <button onClick={loadExamples} disabled={loadingExamples} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md disabled:opacity-50" title="Create example tables to follow the guides">
+              {loadingExamples ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Table2 className="w-3.5 h-3.5" />} Load example tables
+            </button>
+          )}
           {spec?.supports_discover && (
             <button onClick={onBrowse} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md">
               <Table2 className="w-3.5 h-3.5" /> Browse

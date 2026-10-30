@@ -80,7 +80,7 @@ function StepCard({ node, open, onToggle }: { node: PreviewNode; open: boolean; 
         <span className="text-xs text-gray-400 font-mono">{node.node_type.replace('Node', '')}</span>
         {ds && (
           <span className="ml-auto text-xs text-gray-500">
-            {(ds.row_count ?? 0).toLocaleString()} rows × {ds.columns.length} cols
+            {ds.row_count == null && ds.location?.target === 'pushdown' ? 'in your warehouse' : `${(ds.row_count ?? 0).toLocaleString()} rows`} × {ds.columns.length} cols
           </span>
         )}
       </button>

@@ -373,6 +373,16 @@ Explicit setup, document library, collections, indexing and search. Full table i
 
 Connection types `qdrant`, `weaviate` and `chroma` are available on `/connections`.
 
+## Warehouses — `/api/v1/warehouse`
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/warehouse/types` | Supported warehouses with what has been verified |
+| POST | `/warehouse/connections/{id}/examples` | Create the example tables in a read-write PostgreSQL/ClickHouse connection |
+
+Connection types `clickhouse`, `redshift`, `snowflake`, `bigquery` and `databricks` are available on `/connections`
+(`discover` and `preview` work for all of them). Details: [phase6-warehouses.md](phase6-warehouses.md).
+
 ## ML — `/api/v1/ml`
 
 | Method | Path | Purpose |

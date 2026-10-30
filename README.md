@@ -51,6 +51,7 @@ Every step is logged with full model inputs/outputs so you can debug exactly wha
 ![Search results](docs/images/gallery/10-retrieval/06-search-results.png)
 ![Models page](docs/images/gallery/11-ml/07-models-registry-and-try-it.png)
 ![Drift detected](docs/images/gallery/11-ml/04-drift-detected.png)
+![Pushdown to a warehouse](docs/images/gallery/12-warehouses/06-preview-warehouse-sql.png)
 
 👉 **[Full screenshot gallery — every screen and every node's settings](docs/screenshots.md)**
 
@@ -284,6 +285,8 @@ Full API docs: [docs/api-reference.md](docs/api-reference.md)
 | [Retrieval (RAG) guide](docs/rag-guide.md) | **Start here for RAG**: explicit setup, pick pgvector / Qdrant / Weaviate / Chroma, index documents, ask questions with citations |
 | [Vector stores](docs/vector-stores.md) | Supported stores, versions verified, Docker start commands |
 | [Retrieval (technical)](docs/phase4-retrieval.md) | Design, API, nodes, billing, security, what is and is not verified |
+| [Warehouses & pushdown guide](docs/warehouse-guide.md) | **Start here for warehouses**: run Clean/Combine/Summarise/SQL inside ClickHouse, PostgreSQL, Snowflake, BigQuery, Databricks or Redshift without copying data |
+| [Warehouses (technical)](docs/phase6-warehouses.md) | Pushdown design, safety model, dialect notes, what is and is not verified |
 | [ML guide](docs/ml-guide.md) | **Start here for ML**: predict, batch-score, detect drift, track accuracy, promote models — using your own MLflow and endpoint |
 | [ML (technical)](docs/phase5-ml.md) | Nodes, API, billing, security, what is and is not verified |
 | [Data Engine (technical)](docs/phase2-data-engine.md) | DuckDB isolation, storage, preview, billing, API and configuration |

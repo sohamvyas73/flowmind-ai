@@ -105,9 +105,13 @@ export function DataNodeProperties({ node, data, up }: { node: Node; data: Data;
     case 'summariseDataNode': return <SummariseProps node={node} data={data} up={up} />;
     case 'sqlNode': return <SqlProps node={node} data={data} up={up} />;
     case 'qualityGateNode': return <QualityProps node={node} data={data} up={up} />;
+    case 'pullDataNode': return <PullProps data={data} up={up} />;
+    case 'writeWarehouseNode': return <WriteProps data={data} up={up} />;
     default: return null;
   }
 }
+
+const WAREHOUSE_TYPES = ['postgres', 'redshift', 'clickhouse', 'snowflake', 'bigquery', 'databricks'];
 
 type PropsBase = { data: Data; up: (k: string, v: unknown) => void };
 
@@ -123,7 +127,7 @@ function LoadProps({ data, up }: PropsBase) {
 
   const refresh = () => {
     dataApi.listFiles().then(setFiles).catch(() => setFiles([]));
-    connectionsApi.list().then(c => setConns(c.filter(x => x.type === 'postgres'))).catch(() => setConns([]));
+    connectionsApi.list().then(c => setConns(c.filter(x => WAREHOUSE_TYPES.includes(x.type)))).catch(() => setConns([]));
   };
   useEffect(refresh, []);
 
@@ -177,7 +181,20 @@ function LoadProps({ data, up }: PropsBase) {
               {conns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
-          {conns.length === 0 && <Tip>Add a PostgreSQL connection on the <b>Connections</b> page first.</Tip>}
+          {conns.length === 0 && <Tip>Add a database or warehouse connection (PostgreSQL, ClickHouse, Snowflake, BigQuery, Databricks, Redshift) on the <b>Connections</b> page first.</Tip>}
+          {connectionId && (
+            <Field label="Where should the work run?">
+              <Select value={(data.runOn as string) || ''} onChange={v => up('runOn', v)} ring="focus:ring-cyan-500">
+                <option value="">{(conns.find(c => c.id === connectionId)?.type ?? 'postgres') === 'postgres' ? 'Copy rows into FlowMind (default)' : '— choose —'}</option>
+                <option value="warehouse">In my warehouse — the data stays there</option>
+                <option value="flowmind">Copy the rows into FlowMind</option>
+              </Select>
+              <p className="text-xs text-gray-400 mt-1">
+                “In my warehouse”: Clean, Combine, Summarise and SQL steps after this one run inside it, and only a small masked sample comes back.
+                Use a <b>Pull</b> node when a later step needs the actual rows.
+              </p>
+            </Field>
+          )}
           <Field label="Table">
             <input
               list="fm-tables" type="text" value={(data.table as string) || ''}
@@ -657,4 +674,53 @@ function RuleFields({ rule, names, set }: { rule: QualityRule; names: string[]; 
         </>
       );
   }
+}
+
+
+// ── Pull (bring a warehouse table into FlowMind) ────────────────────────────────
+
+function PullProps({ data, up }: PropsBase) {
+  return (
+    <>
+      <Tip>Copies the connected <b>warehouse</b> table into FlowMind so steps that need the rows (Quality Check, AI, ML) can use it. Summarise or filter in the warehouse first to bring in less.</Tip>
+      <Field label="Max rows (optional)">
+        <input type="number" min={1} value={(data.maxRows as string | number) ?? ''} onChange={e => up('maxRows', e.target.value)}
+          placeholder="up to 1,000,000" className={inp('focus:ring-cyan-500')} />
+      </Field>
+    </>
+  );
+}
+
+// ── Save to warehouse ───────────────────────────────────────────────────────────
+
+function WriteProps({ data, up }: PropsBase) {
+  const [conns, setConns] = useState<Connection[]>([]);
+  useEffect(() => { connectionsApi.list().then(c => setConns(c.filter(x => WAREHOUSE_TYPES.includes(x.type)))).catch(() => setConns([])); }, []);
+  const sel = conns.find(c => c.id === data.connectionId);
+  const mode = (data.mode as string) || '';
+  return (
+    <>
+      <Tip>Writes the connected table into your warehouse as a table. If it already lives there, nothing leaves the warehouse. Needs a <b>Read &amp; write</b> connection.</Tip>
+      <Field label="Warehouse connection">
+        <Select value={(data.connectionId as string) || ''} onChange={v => up('connectionId', v)} ring="focus:ring-cyan-500">
+          <option value="">— choose a connection —</option>
+          {conns.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type}{c.access_mode === 'read_only' ? ', read-only' : ''})</option>)}
+        </Select>
+      </Field>
+      {sel && sel.access_mode !== 'read_write' && <p className="text-xs text-amber-700">This connection is read-only, so saving will be refused. Change it on the Connections page.</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Schema (optional)"><input type="text" value={(data.schema as string) || ''} onChange={e => up('schema', e.target.value)} placeholder="default" className={`${inp('focus:ring-cyan-500')} font-mono`} /></Field>
+        <Field label="Table name"><input type="text" value={(data.table as string) || ''} onChange={e => up('table', e.target.value)} placeholder="revenue_by_region" className={`${inp('focus:ring-cyan-500')} font-mono`} /></Field>
+      </div>
+      <Field label="If the table already exists">
+        <Select value={mode} onChange={v => up('mode', v)} ring="focus:ring-cyan-500">
+          <option value="">— choose (nothing is chosen for you) —</option>
+          <option value="create">Create new — fail if it exists</option>
+          <option value="append">Append the rows to it</option>
+          <option value="replace">Replace it (drops the old table)</option>
+        </Select>
+      </Field>
+      {mode === 'replace' && <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded p-2">Replace deletes the existing table first. Use a dedicated schema for FlowMind output.</p>}
+    </>
+  );
 }

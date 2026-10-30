@@ -37,7 +37,7 @@ export function Toolbar() {
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
-  const hasDataNodes = nodes.some(n => ['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode', 'qualityGateNode', 'driftCheckNode'].includes(n.type || ''));
+  const hasDataNodes = nodes.some(n => ['loadDataNode', 'cleanDataNode', 'combineDataNode', 'summariseDataNode', 'sqlNode', 'qualityGateNode', 'driftCheckNode', 'pullDataNode'].includes(n.type || ''));
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {

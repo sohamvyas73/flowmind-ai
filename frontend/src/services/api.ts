@@ -244,6 +244,7 @@ export interface DatasetRef {
   lineage?: { source: string; operation: string }[];
   columns: DatasetColumn[];
   row_count?: number | null;
+  location?: { target?: string } | null;
   row_count_is_estimate: boolean;
   size_bytes?: number | null;
   sample: Record<string, unknown>[];
@@ -482,6 +483,13 @@ export const ragApi = {
     (await api.post('/rag/index', body)).data,
   query: async (body: { collection: string; query: string; top_k: number; min_score: number }): Promise<{ passages: RagPassage[] }> =>
     (await api.post('/rag/query', body)).data,
+};
+
+// ── Warehouses (Phase 6) ───────────────────────────────────────────────────────
+
+export const warehouseApi = {
+  installExamples: async (connectionId: string, tables?: string[]): Promise<{ schema_name: string; tables: string[] }> =>
+    (await api.post(`/warehouse/connections/${connectionId}/examples`, { tables })).data,
 };
 
 // ── ML (Phase 5) ───────────────────────────────────────────────────────────────

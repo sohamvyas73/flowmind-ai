@@ -1,0 +1,24 @@
+# Optional local warehouse for trying FlowMind's pushdown (running work inside your warehouse).
+#   docker compose -f docker-compose.warehouses.yml --profile clickhouse up -d
+# Then add a "ClickHouse" connection: URL http://localhost:8123, user flowmind, password flowmind-demo, database shop,
+# access "Read & write" (an admin must allow-list 'localhost'), and press "Load example tables".
+# PostgreSQL needs no container of its own: any PostgreSQL works as a warehouse (the one FlowMind uses is fine for a demo,
+# but a separate database is better). Snowflake, BigQuery, Databricks and Redshift are cloud services: add their connection directly.
+services:
+  clickhouse:
+    profiles: ["clickhouse"]
+    image: clickhouse/clickhouse-server:24.8
+    container_name: flowmind-clickhouse
+    ports: ["8123:8123"]
+    environment:
+      CLICKHOUSE_USER: flowmind
+      CLICKHOUSE_PASSWORD: flowmind-demo
+      CLICKHOUSE_DB: shop
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes: ["flowmind_clickhouse:/var/lib/clickhouse"]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    restart: unless-stopped
+
+volumes:
+  flowmind_clickhouse:
