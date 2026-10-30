@@ -16,6 +16,7 @@ from app.api import runs as runs_router
 from app.api import schedules as schedules_router
 from app.api import rag as rag_router
 from app.api import ml as ml_router
+from app.api import warehouse as warehouse_router
 from app.core import maintenance
 
 # Register all models with Base before create_all
@@ -167,6 +168,7 @@ app.include_router(data_router.router,      prefix=f"{settings.API_V1_STR}/data"
 app.include_router(lineage_router.router,  prefix=f"{settings.API_V1_STR}/lineage",     tags=["lineage"])
 app.include_router(runs_router.router,      prefix=f"{settings.API_V1_STR}/runs",        tags=["runs"])
 app.include_router(schedules_router.router, prefix=f"{settings.API_V1_STR}/schedules",   tags=["schedules"])
+app.include_router(warehouse_router.router, prefix=f"{settings.API_V1_STR}/warehouse",   tags=["warehouse"])
 app.include_router(ml_router.router,        prefix=f"{settings.API_V1_STR}/ml",          tags=["ml"])
 app.include_router(rag_router.router,       prefix=f"{settings.API_V1_STR}/rag",         tags=["retrieval"])
 app.include_router(workflows.router,     prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"])

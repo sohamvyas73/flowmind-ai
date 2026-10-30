@@ -29,7 +29,7 @@ class ConnectionCrudTests(TestCase):
     def test_types_expose_field_specs(self):
         _, _, h = signup()
         types = {t["type"]: t for t in client.get(f"{API}/types", headers=h).json()}
-        self.assertEqual(set(types), {"postgres", "http_api", "qdrant", "weaviate", "chroma", "mlflow", "ml_endpoint"})
+        self.assertEqual(set(types), {"postgres", "http_api", "qdrant", "weaviate", "chroma", "mlflow", "ml_endpoint", "redshift", "clickhouse", "snowflake", "bigquery", "databricks"})
         pw = next(f for f in types["postgres"]["fields"] if f["name"] == "password")
         self.assertTrue(pw["secret"])
 

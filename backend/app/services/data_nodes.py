@@ -29,10 +29,13 @@ from app.services import dataset_service as ds
 from app.services import quality
 from app.services.dataset_service import DataError
 from app.storage.local import StorageError, storage, tenant_key
+from app.warehouse.base import WarehouseError
+from app.warehouse.registry import is_warehouse
 
 logger = logging.getLogger(__name__)
 
-DATA_NODE_TYPES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode"}
+DATA_NODE_TYPES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode",
+                   "pullDataNode"}
 _NUMERIC_PREFIXES = ("TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER",
                      "UBIGINT", "UHUGEINT", "FLOAT", "DOUBLE", "DECIMAL", "REAL")
 _SAFE_TYPE = re.compile(r"^[A-Za-z0-9_(), ]+$")
@@ -89,7 +92,7 @@ def _unique(names: List[str]) -> None:
 
 # ── compilers: settings → one SELECT ────────────────────────────────────────────
 
-def compile_clean(cfg: Dict[str, Any], cols: List[Dict[str, Any]], src: str = "input") -> str:
+def compile_clean(cfg: Dict[str, Any], cols: List[Dict[str, Any]], src: str = "input", hash_fn: Optional[Any] = None) -> str:
     types = _col_index(cols)
     names = list(types)
     steps: List[str] = []
@@ -155,7 +158,8 @@ def compile_clean(cfg: Dict[str, Any], cols: List[Dict[str, Any]], src: str = "i
             as_text = f"CAST({q} AS VARCHAR)"
             if method == "hash":
                 salt = str(cfg.get("hashSalt") or "")
-                expr = f"sha256({_lit(salt)} || {as_text})" if salt else f"sha256({as_text})"
+                inner = f"{_lit(salt)} || {as_text}" if salt else as_text
+                expr = hash_fn(inner) if hash_fn else f"sha256({inner})"
             elif method == "mask":
                 expr = f"CASE WHEN {q} IS NULL THEN NULL ELSE repeat('*', greatest(length({as_text}) - 4, 0)) || right({as_text}, 4) END"
             elif method == "redact":
@@ -277,7 +281,7 @@ def compile_summarise(cfg: Dict[str, Any], cols: List[Dict[str, Any]], src: str 
 class Upstream:
     node_id: str
     label: str
-    dataset_id: str
+    dataset_id: Optional[str]                 # None for a table that lives in the user's warehouse (pushdown)
     columns: List[Dict[str, Any]]
     result: Dict[str, Any]
 
@@ -294,12 +298,18 @@ def _upstreams(context: Dict[str, Any]) -> List[Upstream]:
     out: List[Upstream] = []
     for src in context.get("_incoming", {}).get(node_id, []):
         r = (context.get("_outputs") or {}).get(src) or {}
-        if r.get("dataset_id"):
-            out.append(Upstream(src, context.get("_labels", {}).get(src, src), r["dataset_id"], r["dataset"]["columns"], r))
+        if r.get("dataset_id") or r.get("pushdown"):
+            out.append(Upstream(src, context.get("_labels", {}).get(src, src), r.get("dataset_id"), r["dataset"]["columns"], r))
     return out
 
 
-def _db_load_inputs(user_id, ups: List[Upstream]) -> List[Tuple[Upstream, str]]:
+WAREHOUSE_TABLE_MSG = ("This table lives in your warehouse. {what} works on tables inside FlowMind: "
+                       "add a Pull node first to bring it in (or keep working in the warehouse with Clean, Combine, Summarise or SQL).")
+
+
+def _db_load_inputs(user_id, ups: List[Upstream], what: str = "This step") -> List[Tuple[Upstream, str]]:
+    if any(u.result.get("pushdown") for u in ups):
+        raise DataNodeError(WAREHOUSE_TABLE_MSG.format(what=what))
     with SessionLocal() as db:
         return [(u, storage.path_for(ds.get_dataset(db, user_id, u.dataset_id).storage_key)) for u in ups]
 
@@ -370,7 +380,7 @@ def _guard(fn):
     async def wrapper(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         try:
             return await fn(node_data, context)
-        except (DataNodeError, DataError, EngineError, ConnectorError, StorageError) as e:
+        except (DataNodeError, DataError, EngineError, ConnectorError, StorageError, WarehouseError) as e:
             return {"error": str(e)}
         except Exception as e:  # never let a data node crash the whole worker
             logger.exception("data node failed")
@@ -414,10 +424,13 @@ async def run_load(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[s
                     c = None
                 if c is None:
                     raise DataNodeError("Connection not found. Pick one of your saved connections.")
-                if c.type != "postgres":
-                    raise DataNodeError(f"Load Data supports PostgreSQL connections (this one is {c.type})")
-                return json.loads(c.config), c.access_mode, list(c.host_allowlist or []), c.name
-        config, mode, allow, conn_name = await asyncio.to_thread(_conn)
+                if c.type != "postgres" and not is_warehouse(c.type):
+                    raise DataNodeError(f"Load Data needs a database or warehouse connection (this one is {c.type})")
+                return json.loads(c.config), c.access_mode, list(c.host_allowlist or []), c.name, c.type, c.id
+        config, mode, allow, conn_name, conn_type, conn_id = await asyncio.to_thread(_conn)
+        if conn_type != "postgres" or node_data.get("runOn") == "warehouse":
+            from app.services import pushdown                      # data stays in the warehouse, or a warehouse other than Postgres
+            return await pushdown.load_from_warehouse(node_data, context, pushdown.Conn(conn_id, conn_name, conn_type, config, mode, allow))
         table = (node_data.get("table") or "").strip()
         if not table:
             raise DataNodeError("Choose a table to load")
@@ -454,7 +467,7 @@ def _one(context: Dict[str, Any], what: str) -> Tuple[Upstream, str]:
     ups = _upstreams(context)
     if not ups:
         raise DataNodeError(f"{what} needs data: connect a Load Data (or another data) node to its input")
-    loaded = _db_load_inputs(_user_id(context), ups[:1])
+    loaded = _db_load_inputs(_user_id(context), ups[:1], what)
     return loaded[0]
 
 
@@ -462,8 +475,20 @@ def _lineage(ups: List[Upstream], op: str) -> List[LineageEdge]:
     return [LineageEdge(source=f"dataset:{u.dataset_id}", operation=op) for u in ups]
 
 
+async def _maybe_pushdown(kind: str, node_data: Dict[str, Any], context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """If the input table lives in the user's warehouse, run this step there instead of in DuckDB."""
+    from app.services import pushdown
+    ups = _upstreams(context)
+    if ups and pushdown.pushdown_upstreams(ups):
+        return await pushdown.run_step(kind, node_data, ups, context)
+    return None
+
+
 @_guard
 async def run_clean(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    pd = await _maybe_pushdown("clean", node_data, context)
+    if pd is not None:
+        return pd
     up, path = await asyncio.to_thread(_one, context, "Clean")
     sql = compile_clean(node_data, up.columns)
     return await _materialise(context, sql=sql, inputs=[EngineInput("input", path)],
@@ -472,6 +497,9 @@ async def run_clean(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[
 
 @_guard
 async def run_summarise(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    pd = await _maybe_pushdown("summarise", node_data, context)
+    if pd is not None:
+        return pd
     up, path = await asyncio.to_thread(_one, context, "Summarise")
     sql = compile_summarise(node_data, up.columns)
     return await _materialise(context, sql=sql, inputs=[EngineInput("input", path)],
@@ -480,6 +508,9 @@ async def run_summarise(node_data: Dict[str, Any], context: Dict[str, Any]) -> D
 
 @_guard
 async def run_combine(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    pd = await _maybe_pushdown("combine", node_data, context)
+    if pd is not None:
+        return pd
     ups = _upstreams(context)
     if len(ups) < 2:
         raise DataNodeError("Combine needs two inputs: connect two data nodes to it (first = left table, second = right)")
@@ -498,6 +529,9 @@ async def run_combine(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dic
 
 @_guard
 async def run_sql_node(node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    pd = await _maybe_pushdown("sql", node_data, context)
+    if pd is not None:
+        return pd
     ups = _upstreams(context)
     if not ups:
         raise DataNodeError("SQL needs data: connect a data node to its input")

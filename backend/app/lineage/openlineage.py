@@ -36,7 +36,7 @@ set_producer(PRODUCER)
 DATASETS_NS = "flowmind://datasets"
 FILES_NS = "flowmind://files"
 DATA_NODE_TYPES = {"loadDataNode", "cleanDataNode", "combineDataNode", "summariseDataNode", "sqlNode", "qualityGateNode",
-                   "batchScoreNode", "driftCheckNode", "feedbackNode"}
+                   "batchScoreNode", "driftCheckNode", "feedbackNode", "pullDataNode", "writeWarehouseNode"}
 # nodes that hand their input table through unchanged
 PASSTHROUGH = {"qualityGateNode", "driftCheckNode", "feedbackNode"}
 

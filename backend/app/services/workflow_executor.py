@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 from app.core.config import settings
 from app.core.url_safety import safe_request, UnsafeURLError
 from app.rag import service as rag
-from app.services import code_sandbox, data_nodes, ml_nodes, rag_nodes
+from app.services import code_sandbox, data_nodes, ml_nodes, pushdown, rag_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -876,6 +876,14 @@ class NodeExecutor:
     async def execute_quality_gate_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         return await data_nodes.run_quality_gate(node_data, context)
 
+    # ── Warehouse nodes (Phase 6) ──────────────────────────────────────────────
+
+    async def execute_pull_data_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await pushdown.run_pull(node_data, context)
+
+    async def execute_write_warehouse_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        return await pushdown.run_write(node_data, context)
+
     # ── ML nodes (Phase 5) ─────────────────────────────────────────────────────
 
     async def execute_predict_node(self, node_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -1555,6 +1563,8 @@ class WorkflowExecutor:
             "summariseDataNode": self.node_executor.execute_summarise_data_node,
             "sqlNode":           self.node_executor.execute_sql_node,
             "qualityGateNode":   self.node_executor.execute_quality_gate_node,
+            "pullDataNode":      self.node_executor.execute_pull_data_node,
+            "writeWarehouseNode": self.node_executor.execute_write_warehouse_node,
             "predictNode":       self.node_executor.execute_predict_node,
             "batchScoreNode":    self.node_executor.execute_batch_score_node,
             "driftCheckNode":    self.node_executor.execute_drift_check_node,
